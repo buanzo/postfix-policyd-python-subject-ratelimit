@@ -1,0 +1,13 @@
+[Unit]
+Description=Subject Rate Limit Policy Service
+After=network.target
+
+[Service]
+Type=simple
+User=policyd-subject-ratelimit
+Group=policyd-subject-ratelimit
+WorkingDirectory=/usr/local/src/postfix-policyd-python-subject-ratelimit/src
+ExecStart=/usr/bin/python3 /usr/local/src/postfix-policyd-python-subject-ratelimit/src/subject_ratelimit_policyd.py
+
+[Install]
+WantedBy=multi-user.target

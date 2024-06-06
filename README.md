@@ -119,6 +119,7 @@ WantedBy=multi-user.target
 
 Enable and start the service:
 ```
+sudo systemctl daemon-reload
 sudo systemctl enable policyd-subject-ratelimit.service
 sudo systemctl start policyd-subject-ratelimit.service
 ```

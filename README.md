@@ -125,7 +125,8 @@ sudo systemctl start policyd-subject-ratelimit.service
 ```
 
 ## Logging
-Logs are stored in `/var/log/subject_ratelimit_maintenance.log` and can be configured in the script files.
+The script uses the logging module, so if you use systemd journalctl is your friend. The maintenance script should be called from the same User via crontab.
+Logs are stored in `/var/log/subject_ratelimit_maintenance.log`, so make sure to touch and chown appropriately.
 
 ## Contributing
 Contributions are welcome! Please fork the repository and submit pull requests.

@@ -7,7 +7,10 @@ Ok?
 # Project: Postfix Policy Daemon for Subject Rate Limiting
 
 ## Description
-This project provides a Postfix policy daemon written in Python to limit the rate of emails based on their subject lines. It detects and handles emails with similar subjects being sent in a short time frame, preventing potential spam or abuse.
+This is a Milter using protocol version 6 that has been tested with Postfix
+only.  It helps you limit the rate of emails based on their subject lines. 
+It detects and handles emails with similar subjects being sent in a short
+time frame, preventing potential spam or abuse.
 
 ## Features
 - Rate limiting based on email subject similarity.

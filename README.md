@@ -1,10 +1,27 @@
 # postfix-policyd-python-subject-ratelimit
 
+I created this milter to specifically address the challenges posed by
+sophisticated spam campaigns that utilize different sender accounts and
+avoid typical Bayesian content filters.  Such campaigns, especially those
+with political inclinations, often employ a strategy of sending emails with
+similar subjects to a targeted set of recipient accounts.  Traditional spam
+filters may not effectively catch these emails due to the variability in
+sender addresses and the lack of typical spam content.
+
+This milter enhances our ability to detect and mitigate these spam campaigns
+by focusing on the similarity of email subjects within a configurable time
+window.  By analyzing subject lines and applying a string similarity
+threshold, the milter can identify patterns that indicate a coordinated spam
+effort.  This is particularly useful in politically inclined campaigns where
+the same message is disseminated across various accounts to influence or
+disrupt targeted recipients.  The ability to customize actions such as HOLD,
+REJECT, or DEFER further ensures that we can respond appropriately to these
+threats, maintaining the integrity and security of our email communications.
+
 ## BE ADVISED: This software is in development. 
 
-Ok?
-
-# Project: Postfix Policy Daemon for Subject Rate Limiting
+Ok?  I will add a prometheus exporter so you can monitor how it works.  I
+suggest you also use the maintenance script daily/hourly.
 
 ## Description
 This is a Milter using protocol version 6 that has been tested with Postfix

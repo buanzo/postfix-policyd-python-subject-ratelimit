@@ -16,10 +16,11 @@ By default, the script operates in DEBUG mode, logging useful data for tuning an
 
 1. Configurable Time Window: Monitor email subjects over a specified period to detect spam bursts.
 2. Similarity Threshold: Set the threshold for subject similarity to identify and block repetitive spam emails.
-3. Flexible Comparison Methods: Choose between string similarity and exact match for subject comparison.
-4. Recipient-Based Triggering: Optionally apply checks only to emails sent to the same recipient.
-5. Whitelisting: Bypass checks for trusted sender and recipient addresses.
-6. Systemd Integration: Managed as a systemd service for reliability and ease of use.
+3. Similarity Count: Wait until n similar-subjects for the same recipient before deciding.
+4. Flexible Comparison Methods: Choose between string similarity and exact match for subject comparison.
+5. Recipient-Based Triggering: Optionally apply checks only to emails sent to the same recipient.
+6. Whitelisting: Bypass checks for trusted sender and recipient addresses.
+7. Systemd Integration: Managed as a systemd service for reliability and ease of use.
 
 ## Setup
 1. **Clone the Repository**: Download to your server using git clone as typical.
@@ -51,5 +52,15 @@ check_policy_service inet:127.0.0.1:10669,
 ```
 
 Finally, reload/restart postfix.
+
+## Test mode
+
+The --test mode allows for you to try manually, without having to run it from postfix. The syntax is simple: 
+
+```plaintext
+--test "SOURCE_ADDRESS" "DESTINATION_ADDRESS" "Subject"
+```
+
+Of course, when running --test it does not honour DEBUG setting.
 
 Remember, once you are happy, set DEBUG to False in config.py

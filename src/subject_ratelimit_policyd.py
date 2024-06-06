@@ -1,11 +1,12 @@
+#!/usr/bin/env python3
 # Author: Arturo 'Buanzo' Busleiman github.com/buanzo
-
-import socket
 import sqlite3
 import datetime
 import difflib
 import logging
 import argparse
+import Milter
+
 from config import (
     time_window_minutes,
     similarity_threshold,
@@ -13,18 +14,33 @@ from config import (
     comparison_method,
     trigger_for_same_recipient,
     sqlite_db_path,
+    server_ip,
     server_port,
     from_address_whitelist,
     rcpt_address_whitelist,
-    DEBUG
+    domain_whitelist,
+    domain_whitelist_file,
+    DEBUG,
+    action
 )
 
-# Logging configuration
-logging.basicConfig(level=logging.DEBUG if DEBUG else logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+class CustomFormatter(logging.Formatter):
+    def format(self, record):
+        record.msg = f"[SubjectRateLimit] {record.msg}"
+        return super().format(record)
 
-# Initialize SQLite database
+logger = logging.getLogger()
+handler = logging.StreamHandler()
+formatter = CustomFormatter('%(asctime)s %(levelname)s: %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
+
+def create_db_connection():
+    return sqlite3.connect(sqlite_db_path, check_same_thread=False)
+
 def init_db():
-    conn = sqlite3.connect(sqlite_db_path)
+    conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS email_subjects (
@@ -35,25 +51,27 @@ def init_db():
         )
     ''')
     conn.commit()
-    return conn
+    conn.close()
 
-# Store the email subject in the database
-def store_subject(conn, subject, recipient):
+def store_subject(subject, recipient):
+    conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO email_subjects (subject, recipient) VALUES (?, ?)', (subject, recipient))
     conn.commit()
+    conn.close()
 
-# Retrieve recent subjects from the database
-def get_recent_subjects(conn, recipient=None, window_minutes=5):
+def get_recent_subjects(recipient=None, window_minutes=5):
+    conn = create_db_connection()
     cursor = conn.cursor()
     time_threshold = datetime.datetime.now() - datetime.timedelta(minutes=window_minutes)
     if recipient and trigger_for_same_recipient:
         cursor.execute('SELECT subject FROM email_subjects WHERE timestamp > ? AND recipient = ?', (time_threshold, recipient))
     else:
         cursor.execute('SELECT subject FROM email_subjects WHERE timestamp > ?', (time_threshold,))
-    return [row[0] for row in cursor.fetchall()]
+    subjects = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return subjects
 
-# Check similarity between subjects
 def is_similar(subject, recent_subjects, method="similarity", threshold=0.8, count=3):
     similar_count = 0
     for recent_subject in recent_subjects:
@@ -69,65 +87,119 @@ def is_similar(subject, recent_subjects, method="similarity", threshold=0.8, cou
                 return True
     return False
 
-# Check if address is whitelisted
-def is_whitelisted(address, whitelist):
-    return address.lower() in [addr.lower() for addr in whitelist]
+def read_domain_whitelist(file_path):
+    whitelist = []
+    try:
+        with open(file_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    whitelist.append(line)
+    except FileNotFoundError:
+        logger.error(f"Domain whitelist file {file_path} not found.")
+    return whitelist
 
-# Handle incoming requests
-def handle_request(conn, data, testing=False):
-    request_data = dict(line.split('=', 1) for line in data.strip().split('\n') if line)
-    subject = request_data.get('subject', '').strip()
-    recipient = request_data.get('recipient', '').strip()
-    sender = request_data.get('sender', '').strip()
+# Read domains from the file and merge with the domain_whitelist from config.py
+combined_domain_whitelist = domain_whitelist[:]
+if domain_whitelist_file:
+    combined_domain_whitelist.extend(read_domain_whitelist(domain_whitelist_file))
 
-    logging.debug(f"Processing email from {sender} to {recipient} with subject: {subject}")
+def is_whitelisted(address, address_whitelist, domain_whitelist):
+    addr_lower = address.lower().split('<')[1].split('>')[0]
+    domain = addr_lower.split('@')[-1]
 
-    # Check if sender or recipient is whitelisted
-    if is_whitelisted(sender, from_address_whitelist) or is_whitelisted(recipient, rcpt_address_whitelist):
-        logging.debug(f"Sender {sender} or recipient {recipient} is whitelisted.")
-        return "action=DUNNO\n\n"
+    if addr_lower in [addr.lower() for addr in address_whitelist]:
+        return True
 
-    if not subject:
-        logging.debug("No subject found in email.")
-        return "action=DUNNO\n\n"
+    for dom in domain_whitelist:
+        if dom.startswith('.'):
+            # Check if the domain or any of its subdomains match
+            if domain == dom[1:] or domain.endswith(dom):
+                return True
+        elif domain == dom.lower():
+            return True
 
-    recent_subjects = get_recent_subjects(conn, recipient if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
-    if is_similar(subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
-        logging.debug(f"Subject '{subject}' is similar to recent subjects: {recent_subjects}")
-        if testing or not DEBUG:
-            return "action=REJECT\n\n"
+    return False
 
-    store_subject(conn, subject, recipient)
-    return "action=DUNNO\n\n"
+class SubjectFilterMilter(Milter.Base):
+    def __init__(self):
+        self.id = Milter.uniqueID()
+        self.sender = None
+        self.recipients = []
+        self.subject = None
+        self.queue_id = None
 
-# Start the policy server
-def start_server(port):
-    conn = init_db()
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(('127.0.0.1', port))
-        s.listen()
-        logging.info(f"Policy server listening on port {port}")
-        while True:
-            client_conn, _ = s.accept()
-            with client_conn:
-                data = client_conn.recv(4096).decode()
-                response = handle_request(conn, data)
-                client_conn.sendall(response.encode())
+    def connect(self, IPname, family, hostaddr):
+        return Milter.CONTINUE
 
-# Test the script without Postfix
-def test_script(sender, recipient, subject):
-    conn = init_db()
-    data = f"sender={sender}\nrecipient={recipient}\nsubject={subject}\n"
-    response = handle_request(conn, data, testing=True)
-    print(response)
+    def envfrom(self, mailfrom, *str):
+        self.sender = mailfrom
+        self.queue_id = self.getsymval('i')
+        logger.debug(f"sender is {self.sender}")
+        return Milter.CONTINUE
 
-if __name__ == '__main__':
+    def envrcpt(self, recip, *str):
+        self.recipients.append(recip)
+        logger.debug(f"adding recipient {recip}")
+        return Milter.CONTINUE
+
+    def header(self, name, value):
+        if name.lower() == 'subject':
+            self.subject = value.strip().replace('\n','')
+            logger.debug(f"subject is '{self.subject}'")
+        return Milter.CONTINUE
+
+    def eom(self):
+        logger.debug(f"EOM : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'")
+
+        if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
+            logger.debug(f"WHITELISTED SENDER: {self.sender}")
+            return Milter.ACCEPT
+
+        if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
+            logger.debug(f"WHITELISTED RECIPIENT : Any of {self.recipients}")
+            return Milter.ACCEPT
+
+        if not self.subject:
+            logger.debug(f"NO SUBJECT")
+            return Milter.ACCEPT
+
+        recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
+        if is_similar(self.subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
+            logger.debug(f"SIMILARITY: Subject '{self.subject}' triggers similarity match")
+            if DEBUG:
+                logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not reject by subject '{self.subject}': from {self.sender} to {self.recipients}")
+                return Milter.ACCEPT
+            action_to_take = {
+                'REJECT': Milter.REJECT,
+                'HOLD': Milter.TEMPFAIL,
+                'DEFER': Milter.DEFER
+            }.get(action, Milter.TEMPFAIL)
+            logger.info(f"SIMILARITY: Returning {action} for sender {self.sender}")
+            return action_to_take
+
+        logger.debug(f"Storing subject '{self.subject}' for recipients {self.recipients}")
+        for recip in self.recipients:
+            store_subject(self.subject, recip)
+        return Milter.ACCEPT
+
+    def close(self):
+        return Milter.CONTINUE
+
+    def abort(self):
+        return Milter.CONTINUE
+
+def main():
     parser = argparse.ArgumentParser(description='Subject Rate Limit Policy Daemon')
     parser.add_argument('--test', nargs=3, metavar=('SENDER', 'RECIPIENT', 'SUBJECT'), help='Test the policy script with given sender, recipient, and subject')
     args = parser.parse_args()
 
     if args.test:
-        test_script(*args.test)
+        response = test_script(*args.test)
+        print(response)
     else:
-        start_server(server_port)
+        Milter.factory = SubjectFilterMilter
+        Milter.runmilter("subjectfilter", f"inet:{server_port}@{server_ip}")
+
+if __name__ == '__main__':
+    main()

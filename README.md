@@ -132,4 +132,5 @@ Logs are stored in `/var/log/subject_ratelimit_maintenance.log`, so make sure to
 Contributions are welcome! Please fork the repository and submit pull requests.
 
 ## License
-This project is licensed under the MIT License.
+This project is licensed under the GNU GPLv3 License
+

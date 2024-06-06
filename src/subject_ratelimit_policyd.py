@@ -5,9 +5,11 @@ import sqlite3
 import datetime
 import difflib
 import logging
+import argparse
 from config import (
     time_window_minutes,
     similarity_threshold,
+    similarity_count,
     comparison_method,
     trigger_for_same_recipient,
     sqlite_db_path,
@@ -17,6 +19,7 @@ from config import (
     DEBUG
 )
 
+# Logging configuration
 logging.basicConfig(level=logging.DEBUG if DEBUG else logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # Initialize SQLite database
@@ -51,14 +54,19 @@ def get_recent_subjects(conn, recipient=None, window_minutes=5):
     return [row[0] for row in cursor.fetchall()]
 
 # Check similarity between subjects
-def is_similar(subject, recent_subjects, method="similarity", threshold=0.8):
+def is_similar(subject, recent_subjects, method="similarity", threshold=0.8, count=3):
+    similar_count = 0
     for recent_subject in recent_subjects:
         if method == "similarity":
             similarity = difflib.SequenceMatcher(None, subject, recent_subject).ratio()
             if similarity > threshold:
-                return True
+                similar_count += 1
+                if similar_count >= count:
+                    return True
         elif method == "exact" and subject == recent_subject:
-            return True
+            similar_count += 1
+            if similar_count >= count:
+                return True
     return False
 
 # Check if address is whitelisted
@@ -66,7 +74,7 @@ def is_whitelisted(address, whitelist):
     return address.lower() in [addr.lower() for addr in whitelist]
 
 # Handle incoming requests
-def handle_request(conn, data):
+def handle_request(conn, data, testing=False):
     request_data = dict(line.split('=', 1) for line in data.strip().split('\n') if line)
     subject = request_data.get('subject', '').strip()
     recipient = request_data.get('recipient', '').strip()
@@ -84,9 +92,9 @@ def handle_request(conn, data):
         return "action=DUNNO\n\n"
 
     recent_subjects = get_recent_subjects(conn, recipient if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
-    if is_similar(subject, recent_subjects, method=comparison_method, threshold=similarity_threshold):
+    if is_similar(subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
         logging.debug(f"Subject '{subject}' is similar to recent subjects: {recent_subjects}")
-        if not DEBUG:
+        if testing or not DEBUG:
             return "action=REJECT\n\n"
 
     store_subject(conn, subject, recipient)
@@ -107,5 +115,19 @@ def start_server(port):
                 response = handle_request(conn, data)
                 client_conn.sendall(response.encode())
 
+# Test the script without Postfix
+def test_script(sender, recipient, subject):
+    conn = init_db()
+    data = f"sender={sender}\nrecipient={recipient}\nsubject={subject}\n"
+    response = handle_request(conn, data, testing=True)
+    print(response)
+
 if __name__ == '__main__':
-    start_server(server_port)
+    parser = argparse.ArgumentParser(description='Subject Rate Limit Policy Daemon')
+    parser.add_argument('--test', nargs=3, metavar=('SENDER', 'RECIPIENT', 'SUBJECT'), help='Test the policy script with given sender, recipient, and subject')
+    args = parser.parse_args()
+
+    if args.test:
+        test_script(*args.test)
+    else:
+        start_server(server_port)

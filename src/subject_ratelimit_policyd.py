@@ -88,6 +88,8 @@ def is_similar(subject, recent_subjects, method="similarity", threshold=0.8, cou
     return False
 
 def read_domain_whitelist(file_path):
+    if file_path is None:
+        return []
     whitelist = []
     try:
         with open(file_path, 'r') as f:
@@ -105,10 +107,12 @@ if domain_whitelist_file:
     combined_domain_whitelist.extend(read_domain_whitelist(domain_whitelist_file))
 
 def is_whitelisted(address, address_whitelist, domain_whitelist):
-    addr_lower = address.lower().split('<')[1].split('>')[0]
-    domain = addr_lower.split('@')[-1]
+    address = address.lower()
+    if '<' in address and '>' in address:
+        address = address.split('<')[1].split('>')[0]
+    domain = address.split('@')[-1]
 
-    if addr_lower in [addr.lower() for addr in address_whitelist]:
+    if address in [addr.lower() for addr in address_whitelist]:
         return True
 
     for dom in domain_whitelist:
@@ -133,13 +137,13 @@ class SubjectFilterMilter(Milter.Base):
         return Milter.CONTINUE
 
     def envfrom(self, mailfrom, *str):
-        self.sender = mailfrom
+        self.sender = mailfrom.lower()
         self.queue_id = self.getsymval('i')
         logger.debug(f"sender is {self.sender}")
         return Milter.CONTINUE
 
     def envrcpt(self, recip, *str):
-        self.recipients.append(recip)
+        self.recipients.append(recip.lower())
         logger.debug(f"adding recipient {recip}")
         return Milter.CONTINUE
 
@@ -149,8 +153,8 @@ class SubjectFilterMilter(Milter.Base):
             logger.debug(f"subject is '{self.subject}'")
         return Milter.CONTINUE
 
-    def eom(self):
-        logger.debug(f"EOM : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'")
+    def eoh(self):
+        logger.debug(f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'")
 
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
             logger.debug(f"WHITELISTED SENDER: {self.sender}")
@@ -181,6 +185,14 @@ class SubjectFilterMilter(Milter.Base):
         logger.debug(f"Storing subject '{self.subject}' for recipients {self.recipients}")
         for recip in self.recipients:
             store_subject(self.subject, recip)
+        return Milter.ACCEPT
+
+    def body(self, chunk):
+        # Do nothing with the body
+        return Milter.ACCEPT
+
+    def eob(self):
+        # End of body, already accepted in eoh
         return Milter.ACCEPT
 
     def close(self):

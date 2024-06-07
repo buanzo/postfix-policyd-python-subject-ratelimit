@@ -15,7 +15,7 @@ DEBUG = True  # Default debug mode
 from_address_whitelist = []
 rcpt_address_whitelist = []
 domain_whitelist = []
-domain_whitelist_file = 'domain_whitelist.txt'
+domain_whitelist_file = None
 
 # Action to take when similar subjects are found
 action = 'HOLD'  # Options: 'REJECT', 'HOLD', 'DEFER'

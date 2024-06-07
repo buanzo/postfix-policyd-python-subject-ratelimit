@@ -21,7 +21,8 @@ from config import (
     domain_whitelist,
     domain_whitelist_file,
     DEBUG,
-    action
+    action,
+    action_log_file_path  # Add this new import
 )
 
 class CustomFormatter(logging.Formatter):
@@ -29,12 +30,23 @@ class CustomFormatter(logging.Formatter):
         record.msg = f"[SubjectRateLimit] {record.msg}"
         return super().format(record)
 
-logger = logging.getLogger()
+# General logger configuration
+logger = logging.getLogger('general')
 handler = logging.StreamHandler()
 formatter = CustomFormatter('%(asctime)s %(levelname)s: %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
+
+# Action logger configuration
+action_logger = None
+if action_log_file_path is not None:
+    action_logger = logging.getLogger('actions')
+    action_handler = logging.FileHandler(action_log_file_path)  # Use the configurable path
+    action_formatter = CustomFormatter('%(asctime)s %(levellevelname)s: %(message)s')
+    action_handler.setFormatter(action_formatter)
+    action_logger.addHandler(action_handler)
+    action_logger.setLevel(logging.INFO)
 
 def create_db_connection():
     return sqlite3.connect(sqlite_db_path, check_same_thread=False)
@@ -173,6 +185,8 @@ class SubjectFilterMilter(Milter.Base):
             logger.debug(f"SIMILARITY: Subject '{self.subject}' triggers similarity match")
             if DEBUG:
                 logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not reject by subject '{self.subject}': from {self.sender} to {self.recipients}")
+                if action_logger:
+                    action_logger.info(f"DEBUG: Would have rejected subject '{self.subject}' from {self.sender} to {self.recipients}")
                 return Milter.ACCEPT
             action_to_take = {
                 'REJECT': Milter.REJECT,
@@ -180,6 +194,8 @@ class SubjectFilterMilter(Milter.Base):
                 'DEFER': Milter.DEFER
             }.get(action, Milter.TEMPFAIL)
             logger.info(f"SIMILARITY: Returning {action} for sender {self.sender}")
+            if action_logger:
+                action_logger.info(f"{action}: Subject '{self.subject}' from {self.sender} to {self.recipients}")
             return action_to_take
 
         logger.debug(f"Storing subject '{self.subject}' for recipients {self.recipients}")

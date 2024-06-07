@@ -19,3 +19,10 @@ domain_whitelist_file = None
 
 # Action to take when similar subjects are found
 action = 'HOLD'  # Options: 'REJECT', 'HOLD', 'DEFER'
+
+# Actions log:
+# Besides the default logger, which uses logger and you can see using journalctl,
+# You can have a log file specifically for actions taken. Or set it to None if you rather
+# just use the journalctl one or whatever
+action_log_file_path = None
+# action_log_file_path = '/var/log/subject_ratelimit_actions.log'

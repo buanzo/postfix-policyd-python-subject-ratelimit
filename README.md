@@ -66,6 +66,8 @@ Edit the `config.py` file to set the parameters for your needs. Key parameters i
 - `DEBUG`: Debug mode toggle.
 - `from_address_whitelist`, `rcpt_address_whitelist`, `domain_whitelist`: Whitelists for addresses and domains.
 - `action`: Action to take when similar subjects are found (`HOLD`, `REJECT`, `DEFER`).
+- `domain_whitelist_file`: Path to a file containing a list of whitelisted domains. If set to None, no additional domains are loaded from a file.
+- `action_log_file_path`: Path to the log file for logging actions. If set to None, action logging is disabled.
 
 ## Postfix Configuration
 Add the following to your Postfix `main.cf` to integrate the policy daemon:

@@ -278,6 +278,7 @@ class SubjectFilterMilter(Milter.Base):
         return Milter.CONTINUE
 
 def main():
+    init_db()
     parser = argparse.ArgumentParser(description='Subject Rate Limit Policy Daemon')
     parser.add_argument('--test', nargs=3, metavar=('SENDER', 'RECIPIENT', 'SUBJECT'), help='Test the policy script with given sender, recipient, and subject')
     args = parser.parse_args()

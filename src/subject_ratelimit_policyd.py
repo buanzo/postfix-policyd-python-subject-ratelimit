@@ -57,6 +57,11 @@ def sanitize_subject(subject):
     except UnicodeEncodeError:
         return subject.encode('utf-8', 'ignore').decode('utf-8')
 
+def clean_address(address):
+    if '<' in address and '>' in address:
+        address = address.split('<')[1].split('>')[0].strip()
+    return address.strip()
+
 def create_db_connection():
     return sqlite3.connect(sqlite_db_path, check_same_thread=False)
 
@@ -83,8 +88,9 @@ def init_db():
     conn.close()
 
 def store_subject(subject, recipient):
-    # Ensure the subject is properly encoded
+    # Ensure the subject and recipient are properly encoded and cleaned
     subject = sanitize_subject(subject)
+    recipient = clean_address(recipient)
 
     conn = create_db_connection()
     cursor = conn.cursor()
@@ -93,17 +99,18 @@ def store_subject(subject, recipient):
     conn.close()
 
 def store_outbound_email(subject, recipient):
-    # Ensure the subject is properly encoded
+    # Ensure the subject and recipient are properly encoded and cleaned
     subject = sanitize_subject(subject)
+    recipient = clean_address(recipient)
 
     logger.debug(f"Storing outbound email: subject='{subject}', recipient='{recipient}'")
-    
+
     conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO outbound_emails (subject, recipient, timestamp) VALUES (?, ?, ?)', (subject, recipient, datetime.datetime.now()))
     conn.commit()
     conn.close()
-    
+
     logger.debug("Outbound email stored successfully")
 
 def get_recent_subjects(recipient=None, window_minutes=5):
@@ -111,6 +118,7 @@ def get_recent_subjects(recipient=None, window_minutes=5):
     cursor = conn.cursor()
     time_threshold = datetime.datetime.now() - datetime.timedelta(minutes=window_minutes)
     if recipient and trigger_for_same_recipient:
+        recipient = clean_address(recipient)
         cursor.execute('SELECT subject FROM email_subjects WHERE timestamp > ? AND recipient = ?', (time_threshold, recipient))
     else:
         cursor.execute('SELECT subject FROM email_subjects WHERE timestamp > ?', (time_threshold,))
@@ -172,9 +180,7 @@ if internal_domains_file:
     combined_internal_domains.extend(read_internal_domains(internal_domains_file))
 
 def is_whitelisted(address, address_whitelist, domain_whitelist):
-    address = address.lower()
-    if '<' in address and '>' in address:
-        address = address.split('<')[1].split('>')[0]
+    address = clean_address(address)
     domain = address.split('@')[-1]
 
     if address in [addr.lower() for addr in address_whitelist]:
@@ -194,8 +200,9 @@ def is_reply(subject):
     return subject.lower().startswith('re:')
 
 def is_reply_to_outbound_email(subject, sender):
-    # Ensure the subject is properly encoded
+    # Ensure the subject is properly encoded and the sender is cleaned
     subject = sanitize_subject(subject)
+    sender = clean_address(sender)
 
     conn = create_db_connection()
     cursor = conn.cursor()
@@ -223,13 +230,13 @@ class SubjectFilterMilter(Milter.Base):
         return Milter.CONTINUE
 
     def envfrom(self, mailfrom, *str):
-        self.sender = mailfrom.lower()
+        self.sender = clean_address(mailfrom.lower())
         self.queue_id = self.getsymval('i')
         logger.debug(f"sender is {self.sender}")
         return Milter.CONTINUE
 
     def envrcpt(self, recip, *str):
-        self.recipients.append(recip.lower())
+        self.recipients.append(clean_address(recip.lower()))
         logger.debug(f"adding recipient {recip}")
         return Milter.CONTINUE
 
@@ -249,19 +256,17 @@ class SubjectFilterMilter(Milter.Base):
             logger.debug(f"NO SUBJECT")
             return Milter.ACCEPT
 
-        # Extract and clean sender's domain
+        # Extract sender's domain
         try:
-            cleaned_sender = self.sender.strip('<>').strip()
-            sender_domain = cleaned_sender.split('@')[-1].strip()
-            logger.debug(f"Cleaned sender: {cleaned_sender}")
+            sender_domain = self.sender.split('@')[-1]
             logger.debug(f"Extracted sender domain: {sender_domain}")
         except Exception as e:
-            logger.error(f"Failed to clean and extract sender domain from {self.sender}: {e}")
+            logger.error(f"Failed to extract sender domain from {self.sender}: {e}")
             return Milter.ACCEPT
 
         # Check if the sender is from an internal domain and store as outbound email if it's not a reply
         if sender_domain in combined_internal_domains:
-            logger.debug(f"Sender {cleaned_sender} is from an internal domain")
+            logger.debug(f"Sender {self.sender} is from an internal domain")
             if not is_reply(self.subject):
                 logger.debug(f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'")
                 store_outbound_email(self.subject, self.recipients[0])

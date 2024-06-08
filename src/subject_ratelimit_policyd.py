@@ -46,7 +46,7 @@ action_logger = None
 if action_log_file_path is not None:
     action_logger = logging.getLogger('actions')
     action_handler = logging.FileHandler(action_log_file_path)
-    action_formatter = CustomFormatter('%(asctime)s %(levellevelname)s: %(message)s')
+    action_formatter = CustomFormatter('%(asctime)s %(levelname)s: %(message)s')
     action_handler.setFormatter(action_formatter)
     action_logger.addHandler(action_handler)
     action_logger.setLevel(logging.INFO)
@@ -88,7 +88,6 @@ def init_db():
     conn.close()
 
 def store_subject(subject, recipient):
-    # Ensure the subject and recipient are properly encoded and cleaned
     subject = sanitize_subject(subject)
     recipient = clean_address(recipient)
 
@@ -99,7 +98,6 @@ def store_subject(subject, recipient):
     conn.close()
 
 def store_outbound_email(subject, recipient):
-    # Ensure the subject and recipient are properly encoded and cleaned
     subject = sanitize_subject(subject)
     recipient = clean_address(recipient)
 
@@ -169,12 +167,10 @@ def read_internal_domains(file_path):
         logger.error(f"Internal domains file {file_path} not found.")
     return domains
 
-# Read domains from the file and merge with the domain_whitelist from config.py
 combined_domain_whitelist = domain_whitelist[:]
 if domain_whitelist_file:
     combined_domain_whitelist.extend(read_domain_whitelist(domain_whitelist_file))
 
-# Merge internal domains from config and file
 combined_internal_domains = internal_domains[:]
 if internal_domains_file:
     combined_internal_domains.extend(read_internal_domains(internal_domains_file))
@@ -188,7 +184,6 @@ def is_whitelisted(address, address_whitelist, domain_whitelist):
 
     for dom in domain_whitelist:
         if dom.startswith('.'):
-            # Check if the domain or any of its subdomains match
             if domain == dom[1:] or domain.endswith(dom):
                 return True
         elif domain == dom.lower():
@@ -200,7 +195,6 @@ def is_reply(subject):
     return subject.lower().startswith('re:')
 
 def is_reply_to_outbound_email(subject, sender):
-    # Ensure the subject is properly encoded and the sender is cleaned
     subject = sanitize_subject(subject)
     sender = clean_address(sender)
 
@@ -225,7 +219,7 @@ class SubjectFilterMilter(Milter.Base):
         self.recipients = []
         self.subject = None
         self.queue_id = None
-        self.processed = False  # Track if the email has already been processed
+        self.processed = False
 
     def connect(self, IPname, family, hostaddr):
         return Milter.CONTINUE
@@ -234,8 +228,7 @@ class SubjectFilterMilter(Milter.Base):
         self.sender = clean_address(mailfrom.lower())
         self.queue_id = self.getsymval('i')
         logger.debug(f"sender is {self.sender}")
-        self.processed = False  # Reset processed flag for new transaction
-        logger.debug(f"self: {vars(self)}")
+        self.processed = False
         return Milter.CONTINUE
 
     def envrcpt(self, recip, *str):
@@ -250,20 +243,21 @@ class SubjectFilterMilter(Milter.Base):
         return Milter.CONTINUE
 
     def eoh(self):
-        logger.debug(f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'")
+        if not self.queue_id:
+            self.queue_id = self.getsymval('i')
+        logger.debug(f"EOH: Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'")
+        logger.debug(f"Queue ID: {self.queue_id}")
 
         if self.processed:
             logger.debug("Email already processed, skipping further checks.")
             return Milter.ACCEPT
 
-        # Debug statement to check internal domains
         logger.debug(f"Combined internal domains: {combined_internal_domains}")
 
         if not self.subject:
             logger.debug(f"NO SUBJECT")
             return Milter.ACCEPT
 
-        # Extract sender's domain
         try:
             sender_domain = self.sender.split('@')[-1]
             logger.debug(f"Extracted sender domain: {sender_domain}")
@@ -271,7 +265,6 @@ class SubjectFilterMilter(Milter.Base):
             logger.error(f"Failed to extract sender domain from {self.sender}: {e}")
             return Milter.ACCEPT
 
-        # Check if the sender is from an internal domain and store as outbound email if it's not a reply
         if sender_domain in combined_internal_domains:
             logger.debug(f"Sender {self.sender} is from an internal domain")
             if not is_reply(self.subject):
@@ -279,21 +272,19 @@ class SubjectFilterMilter(Milter.Base):
                 store_outbound_email(self.subject, self.recipients[0])
                 logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}")
 
-        # Check if the sender is whitelisted
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
             logger.debug(f"WHITELISTED SENDER: {self.sender}")
-            self.processed = True  # Mark as processed
+            self.processed = True
             return Milter.ACCEPT
 
-        # Check if any recipient is whitelisted
-        if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
-            logger.debug(f"WHITELISTED RECIPIENT : Any of {self.recipients}")
-            self.processed = True  # Mark as processed
+        if any(is_whitelisted(recip, rcpt_address_whitelist, combined_domain_whitelist) for recip in self.recipients):
+            logger.debug(f"WHITELISTED RECIPIENT: Any of {self.recipients}")
+            self.processed = True
             return Milter.ACCEPT
 
         if is_reply_to_outbound_email(self.subject, self.sender):
             logger.debug(f"REPLY DETECTED: {self.subject} from {self.sender}")
-            self.processed = True  # Mark as processed
+            self.processed = True
             return Milter.ACCEPT
 
         recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
@@ -303,7 +294,7 @@ class SubjectFilterMilter(Milter.Base):
                 logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not reject by subject '{self.subject}': from {self.sender} to {self.recipients}")
                 if action_logger:
                     action_logger.info(f"DEBUG: Would have rejected subject '{self.subject}' from {self.sender} to {self.recipients}")
-                self.processed = True  # Mark as processed
+                self.processed = True
                 return Milter.ACCEPT
             action_to_take = {
                 'REJECT': Milter.REJECT,
@@ -313,21 +304,19 @@ class SubjectFilterMilter(Milter.Base):
             logger.info(f"SIMILARITY: Returning {action} for sender {self.sender}")
             if action_logger:
                 action_logger.info(f"{action}: Subject '{self.subject}' from {self.sender} to {self.recipients}")
-            self.processed = True  # Mark as processed
+            self.processed = True
             return action_to_take
 
         logger.debug(f"Storing subject '{self.subject}' for recipients {self.recipients}")
         for recip in self.recipients:
             store_subject(self.subject, recip)
-        self.processed = True  # Mark as processed
+        self.processed = True
         return Milter.ACCEPT
 
     def body(self, chunk):
-        # Do nothing with the body
         return Milter.ACCEPT
 
     def eob(self):
-        # End of body, already accepted in eoh
         return Milter.ACCEPT
 
     def close(self):

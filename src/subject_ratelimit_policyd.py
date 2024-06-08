@@ -249,10 +249,10 @@ class SubjectFilterMilter(Milter.Base):
             logger.debug(f"NO SUBJECT")
             return Milter.ACCEPT
 
-        # Extract and clean sender's domain
+        # Clean and extract sender's domain
         try:
             cleaned_sender = self.sender.strip('<>').strip()
-            sender_domain = cleaned_sender.split('@')[-1]
+            sender_domain = cleaned_sender.split('@')[-1].strip()
             logger.debug(f"Cleaned sender: {cleaned_sender}")
             logger.debug(f"Extracted sender domain: {sender_domain}")
         except Exception as e:

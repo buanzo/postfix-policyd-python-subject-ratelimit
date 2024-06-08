@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-# Autor: Buanzo
+# Author: Buanzo
 import sqlite3
 import datetime
 import logging
-from config import sqlite_db_path, time_window_minutes, DEBUG
+from config import sqlite_db_path, time_window_minutes, DEBUG, outbound_storage_days
 
 class CustomFormatter(logging.Formatter):
     def format(self, record):
@@ -34,8 +34,22 @@ def delete_old_records():
     except sqlite3.OperationalError as e:
         logger.error(f"SQLite operational error: {e}")
 
+def delete_old_outbound_records():
+    try:
+        conn = create_db_connection()
+        cursor = conn.cursor()
+        time_threshold = datetime.datetime.now() - datetime.timedelta(days=outbound_storage_days)
+        logger.debug(f"Deleting outbound records older than {time_threshold}")
+        cursor.execute('DELETE FROM outbound_emails WHERE timestamp < ?', (time_threshold,))
+        conn.commit()
+        logger.info(f"Deleted {cursor.rowcount} old outbound records from the database")
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"SQLite operational error: {e}")
+
 def main():
     delete_old_records()
+    delete_old_outbound_records()
 
 if __name__ == '__main__':
     main()

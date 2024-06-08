@@ -26,3 +26,10 @@ action = 'HOLD'  # Options: 'REJECT', 'HOLD', 'DEFER'
 # just use the journalctl one or whatever
 action_log_file_path = None
 # action_log_file_path = '/var/log/subject_ratelimit_actions.log'
+
+# List of internal domains to identify outbound emails
+internal_domains = ['']
+
+# Path to the file containing additional internal domains one per line
+internal_domains_file = None
+

@@ -22,7 +22,9 @@ from config import (
     domain_whitelist_file,
     DEBUG,
     action,
-    action_log_file_path  # Add this new import
+    action_log_file_path,
+    internal_domains,
+    internal_domains_file
 )
 
 class CustomFormatter(logging.Formatter):
@@ -42,8 +44,8 @@ logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
 action_logger = None
 if action_log_file_path is not None:
     action_logger = logging.getLogger('actions')
-    action_handler = logging.FileHandler(action_log_file_path)  # Use the configurable path
-    action_formatter = CustomFormatter('%(asctime)s %(levellevelname)s: %(message)s')
+    action_handler = logging.FileHandler(action_log_file_path)
+    action_formatter = CustomFormatter('%(asctime)s %(levelname)s: %(message)s')
     action_handler.setFormatter(action_formatter)
     action_logger.addHandler(action_handler)
     action_logger.setLevel(logging.INFO)
@@ -62,6 +64,14 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS outbound_emails (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject TEXT,
+            recipient TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -69,6 +79,13 @@ def store_subject(subject, recipient):
     conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO email_subjects (subject, recipient) VALUES (?, ?)', (subject, recipient))
+    conn.commit()
+    conn.close()
+
+def store_outbound_email(subject, recipient):
+    conn = create_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO outbound_emails (subject, recipient, timestamp) VALUES (?, ?, ?)', (subject, recipient, datetime.datetime.now()))
     conn.commit()
     conn.close()
 
@@ -113,10 +130,29 @@ def read_domain_whitelist(file_path):
         logger.error(f"Domain whitelist file {file_path} not found.")
     return whitelist
 
+def read_internal_domains(file_path):
+    if file_path is None:
+        return []
+    domains = []
+    try:
+        with open(file_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    domains.append(line)
+    except FileNotFoundError:
+        logger.error(f"Internal domains file {file_path} not found.")
+    return domains
+
 # Read domains from the file and merge with the domain_whitelist from config.py
 combined_domain_whitelist = domain_whitelist[:]
 if domain_whitelist_file:
     combined_domain_whitelist.extend(read_domain_whitelist(domain_whitelist_file))
+
+# Merge internal domains from config and file
+combined_internal_domains = internal_domains[:]
+if internal_domains_file:
+    combined_internal_domains.extend(read_internal_domains(internal_domains_file))
 
 def is_whitelisted(address, address_whitelist, domain_whitelist):
     address = address.lower()
@@ -136,6 +172,9 @@ def is_whitelisted(address, address_whitelist, domain_whitelist):
             return True
 
     return False
+
+def is_reply(subject):
+    return subject.lower().startswith('re:')
 
 class SubjectFilterMilter(Milter.Base):
     def __init__(self):
@@ -178,6 +217,15 @@ class SubjectFilterMilter(Milter.Base):
 
         if not self.subject:
             logger.debug(f"NO SUBJECT")
+            return Milter.ACCEPT
+
+        if not is_reply(self.subject) and self.sender.split('@')[-1] in combined_internal_domains:
+            store_outbound_email(self.subject, self.recipients[0])
+            logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}")
+            return Milter.ACCEPT
+
+        if is_reply_to_outbound_email(self.subject, self.sender):
+            logger.debug(f"REPLY DETECTED: {self.subject} from {self.sender}")
             return Milter.ACCEPT
 
         recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)

@@ -225,6 +225,7 @@ class SubjectFilterMilter(Milter.Base):
         self.recipients = []
         self.subject = None
         self.queue_id = None
+        self.processed = False  # Track if the email has already been processed
 
     def connect(self, IPname, family, hostaddr):
         return Milter.CONTINUE
@@ -233,6 +234,7 @@ class SubjectFilterMilter(Milter.Base):
         self.sender = clean_address(mailfrom.lower())
         self.queue_id = self.getsymval('i')
         logger.debug(f"sender is {self.sender}")
+        self.processed = False  # Reset processed flag for new transaction
         return Milter.CONTINUE
 
     def envrcpt(self, recip, *str):
@@ -248,6 +250,10 @@ class SubjectFilterMilter(Milter.Base):
 
     def eoh(self):
         logger.debug(f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'")
+
+        if self.processed:
+            logger.debug("Email already processed, skipping further checks.")
+            return Milter.ACCEPT
 
         # Debug statement to check internal domains
         logger.debug(f"Combined internal domains: {combined_internal_domains}")
@@ -275,15 +281,18 @@ class SubjectFilterMilter(Milter.Base):
         # Check if the sender is whitelisted
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
             logger.debug(f"WHITELISTED SENDER: {self.sender}")
+            self.processed = True  # Mark as processed
             return Milter.ACCEPT
 
         # Check if any recipient is whitelisted
         if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
             logger.debug(f"WHITELISTED RECIPIENT : Any of {self.recipients}")
+            self.processed = True  # Mark as processed
             return Milter.ACCEPT
 
         if is_reply_to_outbound_email(self.subject, self.sender):
             logger.debug(f"REPLY DETECTED: {self.subject} from {self.sender}")
+            self.processed = True  # Mark as processed
             return Milter.ACCEPT
 
         recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
@@ -293,6 +302,7 @@ class SubjectFilterMilter(Milter.Base):
                 logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not reject by subject '{self.subject}': from {self.sender} to {self.recipients}")
                 if action_logger:
                     action_logger.info(f"DEBUG: Would have rejected subject '{self.subject}' from {self.sender} to {self.recipients}")
+                self.processed = True  # Mark as processed
                 return Milter.ACCEPT
             action_to_take = {
                 'REJECT': Milter.REJECT,
@@ -302,11 +312,13 @@ class SubjectFilterMilter(Milter.Base):
             logger.info(f"SIMILARITY: Returning {action} for sender {self.sender}")
             if action_logger:
                 action_logger.info(f"{action}: Subject '{self.subject}' from {self.sender} to {self.recipients}")
+            self.processed = True  # Mark as processed
             return action_to_take
 
         logger.debug(f"Storing subject '{self.subject}' for recipients {self.recipients}")
         for recip in self.recipients:
             store_subject(self.subject, recip)
+        self.processed = True  # Mark as processed
         return Milter.ACCEPT
 
     def body(self, chunk):

@@ -30,9 +30,10 @@ from config import (
 
 class CustomFormatter(logging.Formatter):
     def format(self, record):
-        record.msg = f"[SubjectRateLimit] {record.msg}"
         if hasattr(record, 'queue_id') and record.queue_id:
-            record.msg = f"[queue_id: {record.queue_id}] {record.msg}"
+            record.msg = f"[queue_id: {record.queue_id}] [SubjectRateLimit] {record.msg}"
+        else:
+            record.msg = f"[SubjectRateLimit] {record.msg}"
         return super().format(record)
 
 # General logger configuration
@@ -63,6 +64,13 @@ def clean_address(address):
     if '<' in address and '>' in address:
         address = address.split('<')[1].split('>')[0].strip()
     return address.strip()
+
+def log_debug_with_queue_id(logger, message, queue_id):
+    if queue_id:
+        extra = {'queue_id': queue_id}
+        logger.debug(message, extra=extra)
+    else:
+        logger.debug(message)
 
 def create_db_connection():
     return sqlite3.connect(sqlite_db_path, check_same_thread=False)
@@ -221,101 +229,101 @@ class SubjectFilterMilter(Milter.Base):
         self.recipients = []
         self.subject = None
         self.queue_id = None
-        self.processed = False
+        self.processed = False  # Track if the email has already been processed
 
     def connect(self, IPname, family, hostaddr):
-        return Milter.CONTINUE
-
-    def envrcpt(self, recip, *str):
-        self.recipients.append(clean_address(recip.lower()))
-        logger.debug(f"adding recipient {recip}")
-        return Milter.CONTINUE
-
-    def header(self, name, value):
-        if name.lower() == 'subject':
-            self.subject = value.strip().replace('\n','')
-            logger.debug(f"subject is '{self.subject}'")
         return Milter.CONTINUE
 
     def envfrom(self, mailfrom, *str):
         self.sender = clean_address(mailfrom.lower())
         self.queue_id = self.getsymval('i')
-        logger.debug(f"sender is {self.sender}", extra={'queue_id': self.queue_id})
         self.processed = False  # Reset processed flag for new transaction
-        logger.debug(f"self: {vars(self)}", extra={'queue_id': self.queue_id})
+        log_debug_with_queue_id(logger, f"sender is {self.sender}", self.queue_id)
+        log_debug_with_queue_id(logger, f"self: {vars(self)}", self.queue_id)
+        return Milter.CONTINUE
+
+    def envrcpt(self, recip, *str):
+        self.recipients.append(clean_address(recip.lower()))
+        log_debug_with_queue_id(logger, f"adding recipient {recip}", self.queue_id)
+        return Milter.CONTINUE
+
+    def header(self, name, value):
+        if name.lower() == 'subject':
+            self.subject = value.strip().replace('\n','')
+            log_debug_with_queue_id(logger, f"subject is '{self.subject}'", self.queue_id)
         return Milter.CONTINUE
 
     def eoh(self):
-        logger.debug(f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'", extra={'queue_id': self.queue_id})
+        log_debug_with_queue_id(logger, f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'", self.queue_id)
 
         if self.processed:
-            logger.debug("Email already processed, skipping further checks.", extra={'queue_id': self.queue_id})
+            log_debug_with_queue_id(logger, "Email already processed, skipping further checks.", self.queue_id)
             return Milter.ACCEPT
 
         # Debug statement to check internal domains
-        logger.debug(f"Combined internal domains: {combined_internal_domains}", extra={'queue_id': self.queue_id})
+        log_debug_with_queue_id(logger, f"Combined internal domains: {combined_internal_domains}", self.queue_id)
 
         if not self.subject:
-            logger.debug(f"NO SUBJECT", extra={'queue_id': self.queue_id})
+            log_debug_with_queue_id(logger, "NO SUBJECT", self.queue_id)
             return Milter.ACCEPT
 
         # Extract sender's domain
         try:
             sender_domain = self.sender.split('@')[-1]
-            logger.debug(f"Extracted sender domain: {sender_domain}", extra={'queue_id': self.queue_id})
+            log_debug_with_queue_id(logger, f"Extracted sender domain: {sender_domain}", self.queue_id)
         except Exception as e:
-            logger.error(f"Failed to extract sender domain from {self.sender}: {e}", extra={'queue_id': self.queue_id})
+            log_debug_with_queue_id(logger, f"Failed to extract sender domain from {self.sender}: {e}", self.queue_id)
             return Milter.ACCEPT
 
         # Check if the sender is from an internal domain and store as outbound email if it's not a reply
         if sender_domain in combined_internal_domains:
-            logger.debug(f"Sender {self.sender} is from an internal domain", extra={'queue_id': self.queue_id})
+            log_debug_with_queue_id(logger, f"Sender {self.sender} is from an internal domain", self.queue_id)
             if not is_reply(self.subject):
-                logger.debug(f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'", extra={'queue_id': self.queue_id})
+                log_debug_with_queue_id(logger, f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'", self.queue_id)
                 store_outbound_email(self.subject, self.recipients[0])
-                logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}", extra={'queue_id': self.queue_id})
+                log_debug_with_queue_id(logger, f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}", self.queue_id)
 
         # Check if the sender is whitelisted
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
-            logger.debug(f"WHITELISTED SENDER: {self.sender}", extra={'queue_id': self.queue_id})
-            self.processed = True
+            log_debug_with_queue_id(logger, f"WHITELISTED SENDER: {self.sender}", self.queue_id)
+            self.processed = True  # Mark as processed
             return Milter.ACCEPT
 
         # Check if any recipient is whitelisted
         if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
-            logger.debug(f"WHITELISTED RECIPIENT : Any of {self.recipients}", extra={'queue_id': self.queue_id})
-            self.processed = True
+            log_debug_with_queue_id(logger, f"WHITELISTED RECIPIENT : Any of {self.recipients}", self.queue_id)
+            self.processed = True  # Mark as processed
             return Milter.ACCEPT
 
         if is_reply_to_outbound_email(self.subject, self.sender):
-            logger.debug(f"REPLY DETECTED: {self.subject} from {self.sender}", extra={'queue_id': self.queue_id})
-            self.processed = True
+            log_debug_with_queue_id(logger, f"REPLY DETECTED: {self.subject} from {self.sender}", self.queue_id)
+            self.processed = True  # Mark as processed
             return Milter.ACCEPT
 
         recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
         if is_similar(self.subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
-            logger.debug(f"SIMILARITY: Subject '{self.subject}' triggers similarity match", extra={'queue_id': self.queue_id})
+            log_debug_with_queue_id(logger, f"SIMILARITY: Subject '{self.subject}' triggers similarity match", self.queue_id)
             if DEBUG:
-                logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not reject by subject '{self.subject}': from {self.sender} to {self.recipients}", extra={'queue_id': self.queue_id})
+                logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not reject by subject '{self.subject}': from {self.sender} to {self.recipients}")
                 if action_logger:
-                    action_logger.info(f"DEBUG: Would have rejected subject '{self.subject}' from {self.sender} to {self.recipients}", extra={'queue_id': self.queue_id})
-                self.processed = True
+                    action_logger.info(f"DEBUG: Would have rejected subject '{self.subject}' from {self.sender} to {self.recipients}")
+                self.processed = True  # Mark as processed
                 return Milter.ACCEPT
             action_to_take = {
                 'REJECT': Milter.REJECT,
                 'HOLD': Milter.TEMPFAIL,
                 'DEFER': Milter.DEFER
             }.get(action, Milter.TEMPFAIL)
-            logger.info(f"SIMILARITY: Returning {action} for sender {self.sender}", extra={'queue_id': self.queue_id})
+            logger.info(f"SIMILARITY: Returning {action} for sender {self.sender}")
             if action_logger:
-                action_logger.info(f"{action}: Subject '{self.subject}' from {self.sender} to {self.recipients}", extra={'queue_id': self.queue_id})
-            self.processed = True
+                action_logger.info(f"{action}: Subject '{self.subject}' from {self.sender} to {self.recipients}")
+            self.processed = True  # Mark as processed
             return action_to_take
 
-        logger.debug(f"Storing subject '{self.subject}' for recipients {self.recipients}", extra={'queue_id': self.queue_id})
+        log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)
         for recip in self.recipients:
             store_subject(self.subject, recip)
-        self.processed = True
+        self.processed = True  # Mark as processed
         return Milter.ACCEPT
 
     def body(self, chunk):

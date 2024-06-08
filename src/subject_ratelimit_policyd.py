@@ -246,7 +246,7 @@ class SubjectFilterMilter(Milter.Base):
     def envrcpt(self, recip, *str):
         self.queue_id = self.getsymval('i')
         self.recipients.append(clean_address(recip.lower()))
-        log_debug_with_queue_id(logger, f"adding recipient {recip}", self.queue_id)
+        log_debug_with_queue_id(logger, f"adding recipient {recip} queue_id={self.queue_id}", self.queue_id)
         return Milter.CONTINUE
 
     def header(self, name, value):

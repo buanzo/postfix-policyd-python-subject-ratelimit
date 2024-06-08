@@ -249,7 +249,7 @@ class SubjectFilterMilter(Milter.Base):
             logger.debug(f"NO SUBJECT")
             return Milter.ACCEPT
 
-        # Clean and extract sender's domain
+        # Extract and clean sender's domain
         try:
             cleaned_sender = self.sender.strip('<>').strip()
             sender_domain = cleaned_sender.split('@')[-1].strip()
@@ -266,7 +266,7 @@ class SubjectFilterMilter(Milter.Base):
                 logger.debug(f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'")
                 store_outbound_email(self.subject, self.recipients[0])
                 logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}")
-        
+
         # Check if the sender is whitelisted
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
             logger.debug(f"WHITELISTED SENDER: {self.sender}")

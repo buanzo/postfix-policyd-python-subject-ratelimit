@@ -244,17 +244,20 @@ class SubjectFilterMilter(Milter.Base):
         return Milter.CONTINUE
 
     def envrcpt(self, recip, *str):
+        self.queue_id = self.getsymval('i')
         self.recipients.append(clean_address(recip.lower()))
         log_debug_with_queue_id(logger, f"adding recipient {recip}", self.queue_id)
         return Milter.CONTINUE
 
     def header(self, name, value):
+        self.queue_id = self.getsymval('i')
         if name.lower() == 'subject':
             self.subject = value.strip().replace('\n','')
             log_debug_with_queue_id(logger, f"subject is '{self.subject}'", self.queue_id)
         return Milter.CONTINUE
 
     def eoh(self):
+        self.queue_id = self.getsymval('i')
         log_debug_with_queue_id(logger, f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'", self.queue_id)
 
         if self.processed:
@@ -338,6 +341,43 @@ class SubjectFilterMilter(Milter.Base):
 
     def abort(self):
         return Milter.CONTINUE
+
+def test_script(sender, recipient, subject):
+    subject = subject.strip().replace('\n', '')
+
+    logger.debug(f"Testing with sender: {sender}, recipient: {recipient}, subject: {subject}")
+
+    sender_domain = sender.split('@')[-1]
+
+    if sender_domain in combined_internal_domains:
+        if not is_reply(subject):
+            store_outbound_email(subject, recipient)
+
+    if is_whitelisted(sender, from_address_whitelist, combined_domain_whitelist):
+        return "ACCEPT"
+
+    if is_whitelisted(recipient, rcpt_address_whitelist, []):
+        return "ACCEPT"
+
+    if is_reply_to_outbound_email(subject, sender):
+        return "ACCEPT"
+
+    recent_subjects = get_recent_subjects(recipient if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
+    if is_similar(subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
+        if DEBUG:
+            logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not reject by subject '{subject}': from {sender} to {recipient}")
+            if action_logger:
+                action_logger.info(f"DEBUG: Would have rejected subject '{subject}' from {sender} to {recipient}")
+            return "ACCEPT"
+        action_to_take = {
+            'REJECT': "REJECT",
+            'HOLD': "TEMPFAIL",
+            'DEFER': "DEFER"
+        }.get(action, "TEMPFAIL")
+        return action_to_take
+
+    store_subject(subject, recipient)
+    return "ACCEPT"
 
 def main():
     init_db()

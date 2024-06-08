@@ -249,15 +249,21 @@ class SubjectFilterMilter(Milter.Base):
             logger.debug(f"NO SUBJECT")
             return Milter.ACCEPT
 
+        # Extract sender's domain
+        try:
+            sender_domain = self.sender.split('@')[-1]
+            logger.debug(f"Extracted sender domain: {sender_domain}")
+        except Exception as e:
+            logger.error(f"Failed to extract sender domain from {self.sender}: {e}")
+            return Milter.ACCEPT
+
         # Check if the sender is from an internal domain and store as outbound email if it's not a reply
-        if self.sender.split('@')[-1] in combined_internal_domains:
+        if sender_domain in combined_internal_domains:
             logger.debug(f"Sender {self.sender} is from an internal domain")
             if not is_reply(self.subject):
                 logger.debug(f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'")
                 store_outbound_email(self.subject, self.recipients[0])
                 logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}")
-            else:
-                logger.debug(f"Email subject '{self.subject}' is identified as a reply")
 
         # Check if the sender is whitelisted
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):

@@ -50,6 +50,12 @@ if action_log_file_path is not None:
     action_logger.addHandler(action_handler)
     action_logger.setLevel(logging.INFO)
 
+def sanitize_subject(subject):
+    try:
+        return subject.encode('utf-8', 'replace').decode('utf-8')
+    except UnicodeEncodeError:
+        return subject.encode('utf-8', 'ignore').decode('utf-8')
+
 def create_db_connection():
     return sqlite3.connect(sqlite_db_path, check_same_thread=False)
 
@@ -76,6 +82,9 @@ def init_db():
     conn.close()
 
 def store_subject(subject, recipient):
+    # Ensure the subject is properly encoded
+    subject = sanitize_subject(subject)
+    
     conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO email_subjects (subject, recipient) VALUES (?, ?)', (subject, recipient))
@@ -83,6 +92,9 @@ def store_subject(subject, recipient):
     conn.close()
 
 def store_outbound_email(subject, recipient):
+    # Ensure the subject is properly encoded
+    subject = sanitize_subject(subject)
+
     conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO outbound_emails (subject, recipient, timestamp) VALUES (?, ?, ?)', (subject, recipient, datetime.datetime.now()))
@@ -97,7 +109,7 @@ def get_recent_subjects(recipient=None, window_minutes=5):
         cursor.execute('SELECT subject FROM email_subjects WHERE timestamp > ? AND recipient = ?', (time_threshold, recipient))
     else:
         cursor.execute('SELECT subject FROM email_subjects WHERE timestamp > ?', (time_threshold,))
-    subjects = [row[0] for row in cursor.fetchall()]
+    subjects = [sanitize_subject(row[0]) for row in cursor.fetchall()]
     conn.close()
     return subjects
 
@@ -177,12 +189,15 @@ def is_reply(subject):
     return subject.lower().startswith('re:')
 
 def is_reply_to_outbound_email(subject, sender):
+    # Ensure the subject is properly encoded
+    subject = sanitize_subject(subject)
+
     conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT subject FROM outbound_emails WHERE recipient = ?', (sender,))
-    outbound_subjects = [row[0] for row in cursor.fetchall()]
+    outbound_subjects = [sanitize_subject(row[0]) for row in cursor.fetchall()]
     conn.close()
-    
+
     for outbound_subject in outbound_subjects:
         if difflib.SequenceMatcher(None, subject, outbound_subject).ratio() > similarity_threshold:
             return True

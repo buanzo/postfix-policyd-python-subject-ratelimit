@@ -241,18 +241,20 @@ class SubjectFilterMilter(Milter.Base):
 
     def eoh(self):
         logger.debug(f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'")
+        
+        # Debug statement to check internal domains
+        logger.debug(f"Combined internal domains: {combined_internal_domains}")
 
         if not self.subject:
             logger.debug(f"NO SUBJECT")
             return Milter.ACCEPT
 
-        # Check if the sender is from an internal domain
+        # Check if the sender is from an internal domain and store as outbound email if it's not a reply
         if self.sender.split('@')[-1] in combined_internal_domains:
             if not is_reply(self.subject):
                 logger.debug(f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'")
                 store_outbound_email(self.subject, self.recipients[0])
                 logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}")
-                return Milter.ACCEPT
 
         # Check if the sender is whitelisted
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):

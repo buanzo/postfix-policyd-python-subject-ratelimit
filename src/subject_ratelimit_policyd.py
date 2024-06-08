@@ -234,6 +234,7 @@ class SubjectFilterMilter(Milter.Base):
     def connect(self, IPname, family, hostaddr):
         return Milter.CONTINUE
 
+
     def envfrom(self, mailfrom, *str):
         self.sender = clean_address(mailfrom.lower())
         self.queue_id = self.getsymval('i')

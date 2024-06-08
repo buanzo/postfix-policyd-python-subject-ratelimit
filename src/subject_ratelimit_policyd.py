@@ -153,7 +153,7 @@ def read_internal_domains(file_path):
     domains = []
     try:
         with open(file_path, 'r') as f:
-            for line in f):
+            for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
                     domains.append(line)

@@ -242,22 +242,26 @@ class SubjectFilterMilter(Milter.Base):
     def eoh(self):
         logger.debug(f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'")
 
-        if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
-            logger.debug(f"WHITELISTED SENDER: {self.sender}")
-            return Milter.ACCEPT
-
-        if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
-            logger.debug(f"WHITELISTED RECIPIENT : Any of {self.recipients}")
-            return Milter.ACCEPT
-
         if not self.subject:
             logger.debug(f"NO SUBJECT")
             return Milter.ACCEPT
 
-        if not is_reply(self.subject) and self.sender.split('@')[-1] in combined_internal_domains:
-            logger.debug(f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'")
-            store_outbound_email(self.subject, self.recipients[0])
-            logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}")
+        # Check if the sender is from an internal domain
+        if self.sender.split('@')[-1] in combined_internal_domains:
+            if not is_reply(self.subject):
+                logger.debug(f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'")
+                store_outbound_email(self.subject, self.recipients[0])
+                logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}")
+                return Milter.ACCEPT
+
+        # Check if the sender is whitelisted
+        if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
+            logger.debug(f"WHITELISTED SENDER: {self.sender}")
+            return Milter.ACCEPT
+
+        # Check if any recipient is whitelisted
+        if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
+            logger.debug(f"WHITELISTED RECIPIENT : Any of {self.recipients}")
             return Milter.ACCEPT
 
         if is_reply_to_outbound_email(self.subject, self.sender):

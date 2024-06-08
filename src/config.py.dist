@@ -33,3 +33,6 @@ internal_domains = ['']
 # Path to the file containing additional internal domains one per line
 internal_domains_file = None
 
+# Use subject similarity check for replies
+use_subject_similarity_for_replies = False
+

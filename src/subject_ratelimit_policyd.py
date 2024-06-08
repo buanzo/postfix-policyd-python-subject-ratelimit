@@ -24,7 +24,8 @@ from config import (
     action,
     action_log_file_path,
     internal_domains,
-    internal_domains_file
+    internal_domains_file,
+    use_subject_similarity_for_replies
 )
 
 class CustomFormatter(logging.Formatter):
@@ -45,7 +46,7 @@ action_logger = None
 if action_log_file_path is not None:
     action_logger = logging.getLogger('actions')
     action_handler = logging.FileHandler(action_log_file_path)
-    action_formatter = CustomFormatter('%(asctime)s %(levelname)s: %(message)s')
+    action_formatter = CustomFormatter('%(asctime)s %(levellevelname)s: %(message)s')
     action_handler.setFormatter(action_formatter)
     action_logger.addHandler(action_handler)
     action_logger.setLevel(logging.INFO)
@@ -84,7 +85,7 @@ def init_db():
 def store_subject(subject, recipient):
     # Ensure the subject is properly encoded
     subject = sanitize_subject(subject)
-    
+
     conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO email_subjects (subject, recipient) VALUES (?, ?)', (subject, recipient))
@@ -95,11 +96,15 @@ def store_outbound_email(subject, recipient):
     # Ensure the subject is properly encoded
     subject = sanitize_subject(subject)
 
+    logger.debug(f"Storing outbound email: subject='{subject}', recipient='{recipient}'")
+    
     conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO outbound_emails (subject, recipient, timestamp) VALUES (?, ?, ?)', (subject, recipient, datetime.datetime.now()))
     conn.commit()
     conn.close()
+    
+    logger.debug("Outbound email stored successfully")
 
 def get_recent_subjects(recipient=None, window_minutes=5):
     conn = create_db_connection()
@@ -148,7 +153,7 @@ def read_internal_domains(file_path):
     domains = []
     try:
         with open(file_path, 'r') as f:
-            for line in f:
+            for line in f):
                 line = line.strip()
                 if line and not line.startswith('#'):
                     domains.append(line)
@@ -198,10 +203,13 @@ def is_reply_to_outbound_email(subject, sender):
     outbound_subjects = [sanitize_subject(row[0]) for row in cursor.fetchall()]
     conn.close()
 
-    for outbound_subject in outbound_subjects:
-        if difflib.SequenceMatcher(None, subject, outbound_subject).ratio() > similarity_threshold:
-            return True
-    return False
+    if use_subject_similarity_for_replies:
+        for outbound_subject in outbound_subjects:
+            if difflib.SequenceMatcher(None, subject, outbound_subject).ratio() > similarity_threshold:
+                return True
+        return False
+    else:
+        return bool(outbound_subjects)
 
 class SubjectFilterMilter(Milter.Base):
     def __init__(self):
@@ -247,6 +255,7 @@ class SubjectFilterMilter(Milter.Base):
             return Milter.ACCEPT
 
         if not is_reply(self.subject) and self.sender.split('@')[-1] in combined_internal_domains:
+            logger.debug(f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'")
             store_outbound_email(self.subject, self.recipients[0])
             logger.debug(f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}")
             return Milter.ACCEPT

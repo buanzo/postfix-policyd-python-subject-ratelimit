@@ -235,6 +235,7 @@ class SubjectFilterMilter(Milter.Base):
         self.queue_id = self.getsymval('i')
         logger.debug(f"sender is {self.sender}")
         self.processed = False  # Reset processed flag for new transaction
+        logger.debug(f"self: {vars(self)}")
         return Milter.CONTINUE
 
     def envrcpt(self, recip, *str):

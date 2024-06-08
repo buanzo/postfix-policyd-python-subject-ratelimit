@@ -176,6 +176,18 @@ def is_whitelisted(address, address_whitelist, domain_whitelist):
 def is_reply(subject):
     return subject.lower().startswith('re:')
 
+def is_reply_to_outbound_email(subject, sender):
+    conn = create_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT subject FROM outbound_emails WHERE recipient = ?', (sender,))
+    outbound_subjects = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    
+    for outbound_subject in outbound_subjects:
+        if difflib.SequenceMatcher(None, subject, outbound_subject).ratio() > similarity_threshold:
+            return True
+    return False
+
 class SubjectFilterMilter(Milter.Base):
     def __init__(self):
         self.id = Milter.uniqueID()

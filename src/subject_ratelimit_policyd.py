@@ -215,8 +215,16 @@ def is_whitelisted(address, address_whitelist, domain_whitelist):
 
     return False
 
+def decode_subject(subject):
+    decoded_fragments = decode_header(subject)
+    decoded_subject = ''.join(
+        fragment.decode(encoding or 'utf-8') if isinstance(fragment, bytes) else fragment
+        for fragment, encoding in decoded_fragments
+    )
+    return decoded_subject
+
 def is_reply(subject):
-    return subject.lower().startswith('re:')
+    return decode_subject(subject).lower().startswith('re:')
 
 def is_reply_to_outbound_email(subject, sender):
     subject = sanitize_subject(subject)

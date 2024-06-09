@@ -237,10 +237,10 @@ class SubjectFilterMilter(Milter.Base):
         self.subject = None
         self.queue_id = None
         self.processed = False  # Track if the email has already been processed
+        self.headers_to_add = []  # Store headers to add
 
     def connect(self, IPname, family, hostaddr):
         return Milter.CONTINUE
-
 
     def envfrom(self, mailfrom, *str):
         self.sender = clean_address(mailfrom.lower())
@@ -298,22 +298,22 @@ class SubjectFilterMilter(Milter.Base):
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
             log_debug_with_queue_id(logger, f"WHITELISTED SENDER: {self.sender}", self.queue_id)
             self.processed = True  # Mark as processed
-            self.addheader('X-Subject-Ratelimit-Action', 'Whitelist_Sender_ACCEPT')
+            self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Sender_ACCEPT'))
             log_info_with_queue_id(action_logger, "ACCEPT reason=sender_whitelist", self.queue_id)
             return Milter.ACCEPT
 
         # Check if any recipient is whitelisted
         if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
-            log_debug_with_queue_id(logger, f"WHITELISTED RECIPIENT : Any of {self.recipients}", self.queue_id)
+            log_debug_with_queue_id(logger, f"WHITELISTED RECIPIENT: Any of {self.recipients}", self.queue_id)
             self.processed = True  # Mark as processed
             log_info_with_queue_id(action_logger, "ACCEPT reason=rcpt_whitelist", self.queue_id)
-            self.addheader('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT')
+            self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT'))
             return Milter.ACCEPT
 
         if is_reply_to_outbound_email(self.subject, self.sender):
             log_debug_with_queue_id(logger, f"REPLY DETECTED: {self.subject} from {self.sender}", self.queue_id)
             self.processed = True  # Mark as processed
-            self.addheader('X-Subject-Ratelimit-Action', 'Whitelist_Reply_ACCEPT')
+            self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Reply_ACCEPT'))
             log_info_with_queue_id(action_logger, "ACCEPT reason=reply_whitelist", self.queue_id)
             return Milter.ACCEPT
 
@@ -325,7 +325,7 @@ class SubjectFilterMilter(Milter.Base):
                 if action_logger:
                     action_logger.info(f"DEBUG: Would have rejected subject '{self.subject}' from {self.sender} to {self.recipients}")
                 self.processed = True  # Mark as processed
-                self.addheader('X-Subject-Ratelimit-Action', f'DEBUG_{action}')
+                self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'DEBUG_{action}'))
                 return Milter.ACCEPT
             action_to_take = {
                 'REJECT': Milter.REJECT,
@@ -336,13 +336,23 @@ class SubjectFilterMilter(Milter.Base):
             if action_logger:
                 log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
             self.processed = True  # Mark as processed
-            self.addheader('X-Subject-Ratelimit-Action', f'{action}')
+            self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'{action}'))
             return action_to_take
 
         log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)
         for recip in self.recipients:
             store_subject(self.subject, recip)
         self.processed = True  # Mark as processed
+        return Milter.ACCEPT
+
+    def eom(self):
+        # Add headers stored in eoh
+        for header, value in self.headers_to_add:
+            try:
+                self.addheader(header, value)
+                log_debug_with_queue_id(logger, f"Added header {header}: {value}", self.queue_id)
+            except Exception as e:
+                log_error_with_queue_id(logger, f"Failed to add header {header}: {e}", self.queue_id)
         return Milter.ACCEPT
 
     def body(self, chunk):

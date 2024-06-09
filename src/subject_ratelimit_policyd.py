@@ -72,6 +72,13 @@ def log_debug_with_queue_id(logger, message, queue_id):
     else:
         logger.debug(message)
 
+def log_info_with_queue_id(logger, message, queue_id):
+    if queue_id:
+        extra = {'queue_id': queue_id}
+        logger.debug(message, extra=extra)
+    else:
+        logger.debug(message)
+
 def create_db_connection():
     return sqlite3.connect(sqlite_db_path, check_same_thread=False)
 
@@ -291,17 +298,23 @@ class SubjectFilterMilter(Milter.Base):
         if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
             log_debug_with_queue_id(logger, f"WHITELISTED SENDER: {self.sender}", self.queue_id)
             self.processed = True  # Mark as processed
+            self.addheader('X-Subject-Ratelimit-Action', 'Whitelist_Sender_ACCEPT')
+            log_info_with_queue_id(action_logger, "ACCEPT reason=sender_whitelist", self.queue_id)
             return Milter.ACCEPT
 
         # Check if any recipient is whitelisted
         if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
             log_debug_with_queue_id(logger, f"WHITELISTED RECIPIENT : Any of {self.recipients}", self.queue_id)
             self.processed = True  # Mark as processed
+            log_info_with_queue_id(action_logger, "ACCEPT reason=rcpt_whitelist", self.queue_id)
+            self.addheader('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT')
             return Milter.ACCEPT
 
         if is_reply_to_outbound_email(self.subject, self.sender):
             log_debug_with_queue_id(logger, f"REPLY DETECTED: {self.subject} from {self.sender}", self.queue_id)
             self.processed = True  # Mark as processed
+            self.addheader('X-Subject-Ratelimit-Action', 'Whitelist_Reply_ACCEPT')
+            log_info_with_queue_id(action_logger, "ACCEPT reason=reply_whitelist", self.queue_id)
             return Milter.ACCEPT
 
         recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
@@ -312,6 +325,7 @@ class SubjectFilterMilter(Milter.Base):
                 if action_logger:
                     action_logger.info(f"DEBUG: Would have rejected subject '{self.subject}' from {self.sender} to {self.recipients}")
                 self.processed = True  # Mark as processed
+                self.addheader('X-Subject-Ratelimit-Action', f'DEBUG_{action}')
                 return Milter.ACCEPT
             action_to_take = {
                 'REJECT': Milter.REJECT,
@@ -320,8 +334,9 @@ class SubjectFilterMilter(Milter.Base):
             }.get(action, Milter.TEMPFAIL)
             logger.info(f"SIMILARITY: Returning {action} for sender {self.sender}")
             if action_logger:
-                action_logger.info(f"{action}: Subject '{self.subject}' from {self.sender} to {self.recipients}")
+                log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
             self.processed = True  # Mark as processed
+            self.addheader('X-Subject-Ratelimit-Action', f'{action}')
             return action_to_take
 
         log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)

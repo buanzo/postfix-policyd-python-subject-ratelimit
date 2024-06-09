@@ -6,6 +6,7 @@ import difflib
 import logging
 import argparse
 import Milter
+from email.header import decode_header
 
 from config import (
     time_window_minutes,

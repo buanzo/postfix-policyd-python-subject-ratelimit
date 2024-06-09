@@ -75,9 +75,16 @@ def log_debug_with_queue_id(logger, message, queue_id):
 def log_info_with_queue_id(logger, message, queue_id):
     if queue_id:
         extra = {'queue_id': queue_id}
-        logger.debug(message, extra=extra)
+        logger.info(message, extra=extra)
     else:
-        logger.debug(message)
+        logger.info(message)
+
+def log_error_with_queue_id(logger, message, queue_id):
+    if queue_id:
+        extra = {'queue_id': queue_id}
+        logger.error(message, extra=extra)
+    else:
+        logger.error(message)
 
 def create_db_connection():
     return sqlite3.connect(sqlite_db_path, check_same_thread=False)

@@ -375,7 +375,7 @@ class SubjectFilterMilter(Milter.Base):
                     'TEMPFAIL': Milter.TEMPFAIL
                 }.get(action, Milter.TEMPFAIL)  # Default action is TEMPFAIL if the provided action is not recognized
                 log_info_with_queue_id(action_logger, f"action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
-                return Milter.ACCEPT
+                return action_to_take
         except Exception as e:
             log_error_with_queue_id(logger, f"Unhandled exception in eom: {e}\n{traceback.format_exc()}", self.queue_id)
             return Milter.TEMPFAIL

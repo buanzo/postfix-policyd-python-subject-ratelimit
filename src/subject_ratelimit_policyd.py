@@ -115,7 +115,7 @@ def init_db():
     conn.close()
 
 def store_subject(subject, recipient):
-    subject = sanitize_subject(subject)
+    subject = subject
     recipient = clean_address(recipient)
 
     conn = create_db_connection()
@@ -125,7 +125,7 @@ def store_subject(subject, recipient):
     conn.close()
 
 def store_outbound_email(subject, recipient):
-    subject = sanitize_subject(subject)
+    subject = subject
     recipient = clean_address(recipient)
 
     logger.debug(f"Storing outbound email: subject='{subject}', recipient='{recipient}'")
@@ -147,7 +147,7 @@ def get_recent_subjects(recipient=None, window_minutes=5):
         cursor.execute('SELECT subject FROM email_subjects WHERE timestamp > ? AND recipient = ?', (time_threshold, recipient))
     else:
         cursor.execute('SELECT subject FROM email_subjects WHERE timestamp > ?', (time_threshold,))
-    subjects = [sanitize_subject(row[0]) for row in cursor.fetchall()]
+    subjects = [row[0] for row in cursor.fetchall()]
     conn.close()
     return subjects
 
@@ -155,7 +155,6 @@ def is_subject_whitelisted(subject, whitelist):
     """
     Check if the subject contains any whitelisted substring.
     """
-    subject = decode_subject(subject).lower()
     for substring in whitelist:
         if substring.lower() in subject:
             return True
@@ -237,16 +236,16 @@ def decode_subject(subject):
     return decoded_subject
 
 def is_reply(subject):
-    return decode_subject(subject).lower().startswith('re:')
+    return subject.startswith('re:')
 
 def is_reply_to_outbound_email(subject, sender):
-    subject = sanitize_subject(subject)
+    subject = subject
     sender = clean_address(sender)
 
     conn = create_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT subject FROM outbound_emails WHERE recipient = ?', (sender,))
-    outbound_subjects = [sanitize_subject(row[0]) for row in cursor.fetchall()]
+    outbound_subjects = [row[0] for row in cursor.fetchall()]
     conn.close()
 
     if use_subject_similarity_for_replies:
@@ -271,7 +270,7 @@ class SubjectFilterMilter(Milter.Base):
     def eoh(self):
         try:
             self.queue_id = self.getsymval('i')
-            log_debug_with_queue_id(logger, f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'", self.queue_id)
+            log_debug_with_queue_id(logger, f"EOH : Processing email from {self.sender} -> {self.recipients} with original subject: '{self.subject}'", self.queue_id)
 
             # Debug statement to check internal domains
             log_debug_with_queue_id(logger, f"Combined internal domains: {combined_internal_domains}", self.queue_id)
@@ -363,8 +362,8 @@ class SubjectFilterMilter(Milter.Base):
 
             # Now we check for quarantine/hold actions first so we can call quarantine(): 
             # https://pythonhosted.org/pymilter/classMilter_1_1Base.html#a4f9e59479fe677ebe425128a37db67b0
-            if self.action_action is not None and (self.action_action == "QUARANTINE" or self.action_action == "HOLD"):
-                self.quarantine(self.action_reason)
+            if self.action_action is not None and self.action_action in ("QUARANTINE", "HOLD"):
+                self.quarantine("Quarantined by subject similarity ratelimit")
                 log_info_with_queue_id(action_logger, f"action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
                 return Milter.QUARANTINE
             else:  # Check for other actions that dont require specific methods
@@ -396,7 +395,7 @@ class SubjectFilterMilter(Milter.Base):
     def header(self, name, value):
         self.queue_id = self.getsymval('i')
         if name.lower() == 'subject':
-            self.subject = value.strip().replace('\n','')
+            self.subject = sanitize_subject(decode_subject(value)).strip().replace('\n','')
             log_debug_with_queue_id(logger, f"subject is '{self.subject}'", self.queue_id)
         return Milter.CONTINUE
 

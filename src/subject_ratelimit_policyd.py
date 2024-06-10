@@ -266,8 +266,8 @@ class SubjectFilterMilter(Milter.Base):
         self.queue_id = None
         self.processed = False  # Track if the email has already been processed
         self.headers_to_add = []  # Store headers to add
-        self.quarantine_reason = None  # Reason for quarantine
-        self.quarantine_action = None  # Action to take
+        self.action_reason = None  # Reason for action
+        self.action_action = None  # Action to take
 
     def eoh(self):
         try:
@@ -343,22 +343,14 @@ class SubjectFilterMilter(Milter.Base):
                     self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'DEBUG_{action}'))
                     return Milter.ACCEPT
 
-                action_to_take = {
-                    'ACCEPT': Milter.ACCEPT,
-                    'REJECT': Milter.REJECT,
-                    'HOLD': Milter.QUARANTINE,  # HOLD is mapped to QUARANTINE
-                    'QUARANTINE': Milter.QUARANTINE,
-                    'DISCARD': Milter.DISCARD,
-                    'TEMPFAIL': Milter.TEMPFAIL
-                }.get(action, Milter.TEMPFAIL)  # Default action is TEMPFAIL if the provided action is not recognized
 
                 logger.info(f"SIMILARITY: Returning configured {action} for sender {self.sender}")
                 if action_logger:
                     log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
                 self.processed = True  # Mark as processed
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'{action}'))
-                self.quarantine_reason = "Subject similarity match"
-                self.quarantine_action = action_to_take
+                self.action_reason = "Subject similarity match"
+                self.action_action = action
                 return Milter.CONTINUE
 
             log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)
@@ -373,17 +365,28 @@ class SubjectFilterMilter(Milter.Base):
 
     def eom(self):
         try:
-            if self.quarantine_action == Milter.QUARANTINE:
-                self.quarantine(self.quarantine_reason)
-                return Milter.QUARANTINE
-
+            # First we add any headers we might need to add
             for header, value in self.headers_to_add:
                 try:
                     self.addheader(header, value)
-                    log_debug_with_queue_id(logger, f"Added header {header}: {value}", self.queue_id)
+                    log_info_with_queue_id(logger, f"Added header {header}: {value}", self.queue_id)
                 except Exception as e:
                     log_error_with_queue_id(logger, f"Failed to add header {header}: {e}", self.queue_id)
-            return Milter.ACCEPT
+
+            # Now we check for quarantine/hold actions first so we can call quarantine(): 
+            # https://pythonhosted.org/pymilter/classMilter_1_1Base.html#a4f9e59479fe677ebe425128a37db67b0
+            if self.action_action is not None and (self.action_action == "QUARANTINE" or self.action_action == "HOLD"):
+                self.quarantine(self.action_reason)
+                log_info_with_queue_id(action_logger, f"quarantine_action={self.quarantine_action} quarantine_reason='{self.quarantine_reason}'", self.queue_id)
+                return Milter.QUARANTINE
+            else:  # Check for other actions that dont require specific methods
+                action_to_take = {
+                    'ACCEPT': Milter.ACCEPT,
+                    'REJECT': Milter.REJECT,
+                    'DISCARD': Milter.DISCARD,
+                    'TEMPFAIL': Milter.TEMPFAIL
+                }.get(action, Milter.TEMPFAIL)  # Default action is TEMPFAIL if the provided action is not recognized
+                return Milter.ACCEPT
         except Exception as e:
             log_error_with_queue_id(logger, f"Unhandled exception in eom: {e}\n{traceback.format_exc()}", self.queue_id)
             return Milter.TEMPFAIL

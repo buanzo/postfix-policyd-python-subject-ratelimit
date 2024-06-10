@@ -340,7 +340,7 @@ class SubjectFilterMilter(Milter.Base):
                 if action_logger:
                     log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'{action}'))
-                self.action_reason = "Subject similarity match"
+                self.action_reason = "Please try later - error code ss01rl04"
                 self.action_action = action
                 return Milter.CONTINUE
             else:  # yes, there is a return in the previous case, but just to be clear

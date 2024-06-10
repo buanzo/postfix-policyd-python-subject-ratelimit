@@ -18,7 +18,7 @@ domain_whitelist = []
 domain_whitelist_file = None
 
 # Action to take when similar subjects are found
-action = 'HOLD'  # Options: 'REJECT', 'HOLD', 'DEFER'
+action = 'HOLD'  # Options: ACCEPT, HOLD/QUARANTINE, TEMPFAIL, REJECT. See README.md
 
 # Actions log:
 # Besides the default logger, which uses logger and you can see using journalctl,

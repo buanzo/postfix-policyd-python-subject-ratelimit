@@ -17,6 +17,10 @@ rcpt_address_whitelist = []
 domain_whitelist = []
 domain_whitelist_file = None
 
+# You can list substrings that might enable an email to pass through
+# Use with care:
+subject_substring_whitelist = []
+
 # Action to take when similar subjects are found
 action = 'HOLD'  # Options: ACCEPT, HOLD/QUARANTINE, TEMPFAIL, REJECT. See README.md
 

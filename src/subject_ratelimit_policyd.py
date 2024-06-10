@@ -26,7 +26,8 @@ from config import (
     action_log_file_path,
     internal_domains,
     internal_domains_file,
-    use_subject_similarity_for_replies
+    use_subject_similarity_for_replies,
+    subject_substring_whitelist
 )
 
 class CustomFormatter(logging.Formatter):
@@ -148,6 +149,16 @@ def get_recent_subjects(recipient=None, window_minutes=5):
     subjects = [sanitize_subject(row[0]) for row in cursor.fetchall()]
     conn.close()
     return subjects
+
+def is_subject_whitelisted(subject, whitelist):
+    """
+    Check if the subject contains any whitelisted substring.
+    """
+    subject = decode_subject(subject).lower()
+    for substring in whitelist:
+        if substring.lower() in subject:
+            return True
+    return False
 
 def is_similar(subject, recent_subjects, method="similarity", threshold=0.8, count=3):
     similar_count = 0
@@ -292,6 +303,14 @@ class SubjectFilterMilter(Milter.Base):
 
         if not self.subject:
             log_debug_with_queue_id(logger, "NO SUBJECT", self.queue_id)
+            return Milter.ACCEPT
+
+        # Check if the subject contains any whitelisted substring
+        if is_subject_whitelisted(self.subject, subject_substring_whitelist):
+            log_debug_with_queue_id(logger, f"WHITELISTED SUBJECT: {self.subject}", self.queue_id)
+            self.processed = True  # Mark as processed
+            self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Substring_ACCEPT'))
+            log_info_with_queue_id(action_logger, "ACCEPT reason=subject_whitelist", self.queue_id)
             return Milter.ACCEPT
 
         # Extract sender's domain

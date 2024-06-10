@@ -258,7 +258,6 @@ def is_reply_to_outbound_email(subject, sender):
         return bool(outbound_subjects)
 
 class SubjectFilterMilter(Milter.Base):
-class SubjectFilterMilter(Milter.Base):
     def __init__(self):
         self.id = Milter.uniqueID()
         self.sender = None

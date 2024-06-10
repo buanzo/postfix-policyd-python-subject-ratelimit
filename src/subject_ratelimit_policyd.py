@@ -343,12 +343,17 @@ class SubjectFilterMilter(Milter.Base):
                 self.processed = True  # Mark as processed
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'DEBUG_{action}'))
                 return Milter.ACCEPT
+
             action_to_take = {
+                'ACCEPT': Milter.ACCEPT,
                 'REJECT': Milter.REJECT,
-                'HOLD': Milter.TEMPFAIL,
-                'DEFER': Milter.DEFER
-            }.get(action, Milter.TEMPFAIL)
-            logger.info(f"SIMILARITY: Returning {action} for sender {self.sender}")
+                'HOLD': Milter.QUARANTINE,  # HOLD is mapped to QUARANTINE
+                'QUARANTINE': Milter.QUARANTINE,
+                'DISCARD': Milter.DISCARD,
+                'TEMPFAIL': Milter.TEMPFAIL
+            }.get(action, Milter.TEMPFAIL)  # Default action is TEMPFAIL if the provided action is not recognized
+
+            logger.info(f"SIMILARITY: Returning configured {action} for sender {self.sender}")
             if action_logger:
                 log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
             self.processed = True  # Mark as processed

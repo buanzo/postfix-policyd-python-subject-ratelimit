@@ -65,9 +65,22 @@ Edit the newly created `config.py` file to set the parameters for your needs. Ke
 - `server_ip` and `server_port`: IP address and port for the policy server.
 - `DEBUG`: Debug mode toggle.
 - `from_address_whitelist`, `rcpt_address_whitelist`, `domain_whitelist`: Whitelists for addresses and domains.
-- `action`: Action to take when similar subjects are found (`HOLD`, `REJECT`, `DEFER`).
+- `action`: Action to take when similar subjects are found and no whitelisting is triggered. See below for details.
 - `domain_whitelist_file`: Path to a file containing a list of whitelisted domains. If set to None, no additional domains are loaded from a file.
 - `action_log_file_path`: Path to the log file for logging actions. If set to None, action logging is disabled.
+
+## Available actions
+
+When similar subjects are found, the action parameter determines how the
+email is handled.  The valid options are:
+
+- `ACCEPT` to accept the message without modifications
+- `REJECT` to permanently reject the message
+- `HOLD` or `QUARANTINE` to quarantine the message for further review
+- `DISCARD` to accept the message but silently discard it
+- `TEMPFAIL` to temporarily fail the message, requesting the sender to retry later.
+
+When DEBUG is True, the action that would have been taken is logged appropriately, but the message is ACCEPT-ed.
 
 ## Postfix Configuration
 Add the following to your Postfix `main.cf` to integrate the milter:

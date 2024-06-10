@@ -276,9 +276,8 @@ class SubjectFilterMilter(Milter.Base):
             log_debug_with_queue_id(logger, f"Combined internal domains: {combined_internal_domains}", self.queue_id)
 
             if not self.subject:
-                self.subject = ''
-                log_debug_with_queue_id(logger, "NO SUBJECT. Using empty subject", self.queue_id)
-                return Milter.CONTINUE
+                log_info_with_queue_id(logger, "NO SUBJECT. Accepting", self.queue_id)
+                return Milter.ACCEPT
 
             # Check if the subject contains any whitelisted substring
             if is_subject_whitelisted(self.subject, subject_substring_whitelist):

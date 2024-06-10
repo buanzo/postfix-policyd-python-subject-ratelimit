@@ -377,7 +377,7 @@ class SubjectFilterMilter(Milter.Base):
             # https://pythonhosted.org/pymilter/classMilter_1_1Base.html#a4f9e59479fe677ebe425128a37db67b0
             if self.action_action is not None and (self.action_action == "QUARANTINE" or self.action_action == "HOLD"):
                 self.quarantine(self.action_reason)
-                log_info_with_queue_id(action_logger, f"quarantine_action={self.quarantine_action} quarantine_reason='{self.quarantine_reason}'", self.queue_id)
+                log_info_with_queue_id(action_logger, f"action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
                 return Milter.QUARANTINE
             else:  # Check for other actions that dont require specific methods
                 action_to_take = {
@@ -386,6 +386,7 @@ class SubjectFilterMilter(Milter.Base):
                     'DISCARD': Milter.DISCARD,
                     'TEMPFAIL': Milter.TEMPFAIL
                 }.get(action, Milter.TEMPFAIL)  # Default action is TEMPFAIL if the provided action is not recognized
+                log_info_with_queue_id(action_logger, f"action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
                 return Milter.ACCEPT
         except Exception as e:
             log_error_with_queue_id(logger, f"Unhandled exception in eom: {e}\n{traceback.format_exc()}", self.queue_id)

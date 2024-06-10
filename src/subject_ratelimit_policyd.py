@@ -276,13 +276,14 @@ class SubjectFilterMilter(Milter.Base):
             log_debug_with_queue_id(logger, f"Combined internal domains: {combined_internal_domains}", self.queue_id)
 
             if not self.subject:
-                log_debug_with_queue_id(logger, "NO SUBJECT", self.queue_id)
-                return Milter.ACCEPT
+                self.subject = ''
+                log_debug_with_queue_id(logger, "NO SUBJECT. Using empty subject", self.queue_id)
+                return Milter.CONTINUE
 
             # Check if the subject contains any whitelisted substring
             if is_subject_whitelisted(self.subject, subject_substring_whitelist):
                 log_debug_with_queue_id(logger, f"WHITELISTED SUBJECT: {self.subject}", self.queue_id)
-                self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Substring_ACCEPT'))
+                # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Substring_ACCEPT'))
                 log_info_with_queue_id(action_logger, "ACCEPT reason=subject_whitelist", self.queue_id)
                 return Milter.ACCEPT
 
@@ -292,7 +293,8 @@ class SubjectFilterMilter(Milter.Base):
                 log_debug_with_queue_id(logger, f"Extracted sender domain: {sender_domain}", self.queue_id)
             except Exception as e:
                 log_debug_with_queue_id(logger, f"Failed to extract sender domain from {self.sender}: {e}", self.queue_id)
-                return Milter.ACCEPT
+                sender_domain = ''  # FIX: Should this be like this? should I Milter.ACCEPT or CONTINUE instead?
+                # return Milter.ACCEPT
 
             # Check if the sender is from an internal domain and store as outbound email if it's not a reply
             if sender_domain in combined_internal_domains:
@@ -305,7 +307,7 @@ class SubjectFilterMilter(Milter.Base):
             # Check if the sender is whitelisted
             if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
                 log_debug_with_queue_id(logger, f"WHITELISTED SENDER: {self.sender}", self.queue_id)
-                self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Sender_ACCEPT'))
+                # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Sender_ACCEPT'))
                 log_info_with_queue_id(action_logger, "ACCEPT reason=sender_whitelist", self.queue_id)
                 return Milter.ACCEPT
 
@@ -313,44 +315,49 @@ class SubjectFilterMilter(Milter.Base):
             if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
                 log_debug_with_queue_id(logger, f"WHITELISTED RECIPIENT: Any of {self.recipients}", self.queue_id)
                 log_info_with_queue_id(action_logger, "ACCEPT reason=rcpt_whitelist", self.queue_id)
-                self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT'))
+                # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT'))
                 return Milter.ACCEPT
 
             if is_reply_to_outbound_email(self.subject, self.sender):
                 log_debug_with_queue_id(logger, f"REPLY DETECTED: {self.subject} from {self.sender}", self.queue_id)
-                self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Reply_ACCEPT'))
+                # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Reply_ACCEPT'))
                 log_info_with_queue_id(action_logger, "ACCEPT reason=reply_whitelist", self.queue_id)
                 return Milter.ACCEPT
 
             recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
             if is_similar(self.subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
                 log_debug_with_queue_id(logger, f"SIMILARITY: Subject '{self.subject}' triggers similarity match", self.queue_id)
+                # When DEBUG==True we only log what we would have done, but not actually do anything but ACCEPT
                 if DEBUG:
                     logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not action='{action}' by subject='{self.subject}': from={self.sender} rcpts={self.recipients}")
                     if action_logger:
                         action_logger.info(f"DEBUG: Would have applied action='{action}' for subject='{self.subject}' from={self.sender} rcpts={self.recipients}")
                     self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'DEBUG_{action}'))
-                    return Milter.ACCEPT
+                    return Milter.CONTINUE  # Because we have headers to add, if not we could use Milter.ACCEPT
 
 
-                logger.info(f"SIMILARITY: Returning configured {action} for sender {self.sender}")
+                # When not debugging, we set action_action and action_reason to be used later, in eom()
+                logger.info(f"SIMILARITY: Will {action} sender {self.sender}")
                 if action_logger:
                     log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'{action}'))
                 self.action_reason = "Subject similarity match"
                 self.action_action = action
                 return Milter.CONTINUE
-
-            log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)
-            for recip in self.recipients:
-                store_subject(self.subject, recip)
-            return Milter.ACCEPT
+            else:  # yes, there is a return in the previous case, but just to be clear
+                log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)
+                for recip in self.recipients:
+                    store_subject(self.subject, recip)
+                return Milter.ACCEPT # Nothing else to do, no headers to add, so we can ACCEPT
 
         except Exception as e:
             log_error_with_queue_id(logger, f"Unhandled exception: {e}\n{traceback.format_exc()}", self.queue_id)
             return Milter.TEMPFAIL
 
     def eom(self):
+        # If no Milter.ACCEPT/TEMPFAIL happened in eoh() then we have something to do
+        # Like adding headers, which can only be done, apparently, in eom()
+        # And of course, take the similarity-triggered action
         try:
             # First we add any headers we might need to add
             for header, value in self.headers_to_add:
@@ -364,7 +371,7 @@ class SubjectFilterMilter(Milter.Base):
             # https://pythonhosted.org/pymilter/classMilter_1_1Base.html#a4f9e59479fe677ebe425128a37db67b0
             if self.action_action is not None and self.action_action in ("QUARANTINE", "HOLD"):
                 self.quarantine("Quarantined by subject similarity ratelimit")
-                log_info_with_queue_id(action_logger, f"action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
+                log_info_with_queue_id(action_logger, f"Simillarity triggered quarantine action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
                 return Milter.QUARANTINE
             else:  # Check for other actions that dont require specific methods
                 action_to_take = {
@@ -373,7 +380,7 @@ class SubjectFilterMilter(Milter.Base):
                     'DISCARD': Milter.DISCARD,
                     'TEMPFAIL': Milter.TEMPFAIL
                 }.get(action, Milter.TEMPFAIL)  # Default action is TEMPFAIL if the provided action is not recognized
-                log_info_with_queue_id(action_logger, f"action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
+                log_info_with_queue_id(action_logger, f"Similarity triggered action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
                 return action_to_take
         except Exception as e:
             log_error_with_queue_id(logger, f"Unhandled exception in eom: {e}\n{traceback.format_exc()}", self.queue_id)

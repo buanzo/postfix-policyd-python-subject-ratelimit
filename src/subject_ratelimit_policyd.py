@@ -258,6 +258,7 @@ def is_reply_to_outbound_email(subject, sender):
         return bool(outbound_subjects)
 
 class SubjectFilterMilter(Milter.Base):
+class SubjectFilterMilter(Milter.Base):
     def __init__(self):
         self.id = Milter.uniqueID()
         self.sender = None
@@ -266,30 +267,8 @@ class SubjectFilterMilter(Milter.Base):
         self.queue_id = None
         self.processed = False  # Track if the email has already been processed
         self.headers_to_add = []  # Store headers to add
-
-    def connect(self, IPname, family, hostaddr):
-        return Milter.CONTINUE
-
-    def envfrom(self, mailfrom, *str):
-        self.sender = clean_address(mailfrom.lower())
-        self.queue_id = self.getsymval('i')
-        self.processed = False  # Reset processed flag for new transaction
-        # log_debug_with_queue_id(logger, f"sender is {self.sender}", self.queue_id)
-        # log_debug_with_queue_id(logger, f"self: {vars(self)}", self.queue_id)
-        return Milter.CONTINUE
-
-    def envrcpt(self, recip, *str):
-        self.queue_id = self.getsymval('i')
-        self.recipients.append(clean_address(recip.lower()))
-        log_debug_with_queue_id(logger, f"adding recipient {recip} queue_id={self.queue_id}", self.queue_id)
-        return Milter.CONTINUE
-
-    def header(self, name, value):
-        self.queue_id = self.getsymval('i')
-        if name.lower() == 'subject':
-            self.subject = value.strip().replace('\n','')
-            log_debug_with_queue_id(logger, f"subject is '{self.subject}'", self.queue_id)
-        return Milter.CONTINUE
+        self.quarantine_reason = None  # Reason for quarantine
+        self.quarantine_action = None  # Action to take
 
     def eoh(self):
         try:
@@ -306,6 +285,14 @@ class SubjectFilterMilter(Milter.Base):
             if not self.subject:
                 log_debug_with_queue_id(logger, "NO SUBJECT", self.queue_id)
                 return Milter.ACCEPT
+
+            # Force QUARANTINE for a specific sender
+            if self.sender == "root@mx5.mailfighter.net":
+                log_debug_with_queue_id(logger, f"QUARANTINE: Sender '{self.sender}' matches the forced quarantine rule", self.queue_id)
+                self.quarantine_reason = "Forced quarantine by policy"
+                self.quarantine_action = Milter.QUARANTINE
+                self.processed = True  # Mark as processed
+                return Milter.CONTINUE
 
             # Check if the subject contains any whitelisted substring
             if is_subject_whitelisted(self.subject, subject_substring_whitelist):
@@ -379,7 +366,9 @@ class SubjectFilterMilter(Milter.Base):
                     log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
                 self.processed = True  # Mark as processed
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'{action}'))
-                return action_to_take
+                self.quarantine_reason = "Subject similarity match"
+                self.quarantine_action = action_to_take
+                return Milter.CONTINUE
 
             log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)
             for recip in self.recipients:
@@ -392,14 +381,45 @@ class SubjectFilterMilter(Milter.Base):
             return Milter.TEMPFAIL
 
     def eom(self):
-        # Add headers stored in eoh
-        for header, value in self.headers_to_add:
-            try:
-                self.addheader(header, value)
-                log_debug_with_queue_id(logger, f"Added header {header}: {value}", self.queue_id)
-            except Exception as e:
-                log_error_with_queue_id(logger, f"Failed to add header {header}: {e}", self.queue_id)
-        return Milter.ACCEPT
+        try:
+            if self.quarantine_action == Milter.QUARANTINE:
+                self.quarantine(self.quarantine_reason)
+                return Milter.QUARANTINE
+
+            for header, value in self.headers_to_add:
+                try:
+                    self.addheader(header, value)
+                    log_debug_with_queue_id(logger, f"Added header {header}: {value}", self.queue_id)
+                except Exception as e:
+                    log_error_with_queue_id(logger, f"Failed to add header {header}: {e}", self.queue_id)
+            return Milter.ACCEPT
+        except Exception as e:
+            log_error_with_queue_id(logger, f"Unhandled exception in eom: {e}\n{traceback.format_exc()}", self.queue_id)
+            return Milter.TEMPFAIL
+
+    def connect(self, IPname, family, hostaddr):
+        return Milter.CONTINUE
+
+    def envfrom(self, mailfrom, *str):
+        self.sender = clean_address(mailfrom.lower())
+        self.queue_id = self.getsymval('i')
+        self.processed = False  # Reset processed flag for new transaction
+        # log_debug_with_queue_id(logger, f"sender is {self.sender}", self.queue_id)
+        # log_debug_with_queue_id(logger, f"self: {vars(self)}", self.queue_id)
+        return Milter.CONTINUE
+
+    def envrcpt(self, recip, *str):
+        self.queue_id = self.getsymval('i')
+        self.recipients.append(clean_address(recip.lower()))
+        log_debug_with_queue_id(logger, f"adding recipient {recip} queue_id={self.queue_id}", self.queue_id)
+        return Milter.CONTINUE
+
+    def header(self, name, value):
+        self.queue_id = self.getsymval('i')
+        if name.lower() == 'subject':
+            self.subject = value.strip().replace('\n','')
+            log_debug_with_queue_id(logger, f"subject is '{self.subject}'", self.queue_id)
+        return Milter.CONTINUE
 
     def body(self, chunk):
         return Milter.ACCEPT

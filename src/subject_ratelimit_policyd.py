@@ -286,14 +286,6 @@ class SubjectFilterMilter(Milter.Base):
                 log_debug_with_queue_id(logger, "NO SUBJECT", self.queue_id)
                 return Milter.ACCEPT
 
-            # Force QUARANTINE for a specific sender
-            if self.sender == "root@mx5.mailfighter.net":
-                log_debug_with_queue_id(logger, f"QUARANTINE: Sender '{self.sender}' matches the forced quarantine rule", self.queue_id)
-                self.quarantine_reason = "Forced quarantine by policy"
-                self.quarantine_action = Milter.QUARANTINE
-                self.processed = True  # Mark as processed
-                return Milter.CONTINUE
-
             # Check if the subject contains any whitelisted substring
             if is_subject_whitelisted(self.subject, subject_substring_whitelist):
                 log_debug_with_queue_id(logger, f"WHITELISTED SUBJECT: {self.subject}", self.queue_id)

@@ -356,9 +356,9 @@ class SubjectFilterMilter(Milter.Base):
         if is_similar(self.subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
             log_debug_with_queue_id(logger, f"SIMILARITY: Subject '{self.subject}' triggers similarity match", self.queue_id)
             if DEBUG:
-                logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not reject by subject '{self.subject}': from {self.sender} to {self.recipients}")
+                logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not action='{action}' by subject='{self.subject}': from={self.sender} rcpts={self.recipients}")
                 if action_logger:
-                    action_logger.info(f"DEBUG: Would have rejected subject '{self.subject}' from {self.sender} to {self.recipients}")
+                    action_logger.info(f"DEBUG: Would have applied action='{action} for subject='{self.subject}' from={self.sender} rcpts={self.recipients}")
                 self.processed = True  # Mark as processed
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'DEBUG_{action}'))
                 return Milter.ACCEPT

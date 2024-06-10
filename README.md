@@ -54,20 +54,39 @@ time frame, preventing potential spam or abuse.
 4. Choose how to start it. We provide a sample systemd service unit. See below for more information.
 
 ## Configuration
-Edit the newly created `config.py` file to set the parameters for your needs. Key parameters include:
 
+Edit the newly created `config.py` file to set the parameters for your needs. You will want to carefully review and set each of this.
+
+### Core Settings
+- `server_ip`: IP address for the policy server.
+- `server_port`: Port for the policy server.
+- `sqlite_db_path`: Path to the SQLite database.
+- `DEBUG`: Debug mode toggle. Defaults to True. This Milter needs CAREFUL configuration.
+
+### Similarity Check Parameters
 - `time_window_minutes`: Time window in minutes to consider for similar subjects.
 - `similarity_threshold`: Threshold for string similarity (0 to 1).
 - `similarity_count`: Number of similar subjects required to trigger rejection.
-- `comparison_method`: Method for comparing subjects (`similarity` or `exact`).
+- `comparison_method`: Method for comparing subjects (similarity or exact).
+
+### Trigger Settings
 - `trigger_for_same_recipient`: Only trigger for emails sent to the same recipient.
-- `sqlite_db_path`: Path to the SQLite database.
-- `server_ip` and `server_port`: IP address and port for the policy server.
-- `DEBUG`: Debug mode toggle.
-- `from_address_whitelist`, `rcpt_address_whitelist`, `domain_whitelist`: Whitelists for addresses and domains.
-- `action`: Action to take when similar subjects are found and no whitelisting is triggered. See below for details.
+- `use_subject_similarity_for_replies`: Use subject similarity check for replies.
+
+### Whitelisting
+- `from_address_whitelist`: Whitelist for sender addresses.
+- `rcpt_address_whitelist`: Whitelist for recipient addresses.
+- `domain_whitelist`: Whitelist for domains.
 - `domain_whitelist_file`: Path to a file containing a list of whitelisted domains. If set to None, no additional domains are loaded from a file.
+- `subject_substring_whitelist`: List of substrings that might enable an email to pass through. Use with care.
+
+### Action Settings
+- `action`: Action to take when similar subjects are found and no whitelisting is triggered. Options: ACCEPT, HOLD/QUARANTINE, TEMPFAIL, REJECT.
 - `action_log_file_path`: Path to the log file for logging actions. If set to None, action logging is disabled.
+
+### Internal Domains
+- `internal_domains`: List of internal domains to identify outbound emails.
+- `internal_domains_file`: Path to the file containing additional internal domains one per line.
 
 ## Available actions
 

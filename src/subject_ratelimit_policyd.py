@@ -264,7 +264,6 @@ class SubjectFilterMilter(Milter.Base):
         self.recipients = []
         self.subject = None
         self.queue_id = None
-        self.processed = False  # Track if the email has already been processed
         self.headers_to_add = []  # Store headers to add
         self.action_reason = None  # Reason for action
         self.action_action = None  # Action to take
@@ -273,10 +272,6 @@ class SubjectFilterMilter(Milter.Base):
         try:
             self.queue_id = self.getsymval('i')
             log_debug_with_queue_id(logger, f"EOH : Processing email from {self.sender} -> {self.recipients} with subject: '{self.subject}'", self.queue_id)
-
-            if self.processed:
-                log_debug_with_queue_id(logger, "Email already processed, skipping further checks.", self.queue_id)
-                return Milter.ACCEPT
 
             # Debug statement to check internal domains
             log_debug_with_queue_id(logger, f"Combined internal domains: {combined_internal_domains}", self.queue_id)
@@ -288,7 +283,6 @@ class SubjectFilterMilter(Milter.Base):
             # Check if the subject contains any whitelisted substring
             if is_subject_whitelisted(self.subject, subject_substring_whitelist):
                 log_debug_with_queue_id(logger, f"WHITELISTED SUBJECT: {self.subject}", self.queue_id)
-                self.processed = True  # Mark as processed
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Substring_ACCEPT'))
                 log_info_with_queue_id(action_logger, "ACCEPT reason=subject_whitelist", self.queue_id)
                 return Milter.ACCEPT
@@ -312,7 +306,6 @@ class SubjectFilterMilter(Milter.Base):
             # Check if the sender is whitelisted
             if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
                 log_debug_with_queue_id(logger, f"WHITELISTED SENDER: {self.sender}", self.queue_id)
-                self.processed = True  # Mark as processed
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Sender_ACCEPT'))
                 log_info_with_queue_id(action_logger, "ACCEPT reason=sender_whitelist", self.queue_id)
                 return Milter.ACCEPT
@@ -320,14 +313,12 @@ class SubjectFilterMilter(Milter.Base):
             # Check if any recipient is whitelisted
             if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
                 log_debug_with_queue_id(logger, f"WHITELISTED RECIPIENT: Any of {self.recipients}", self.queue_id)
-                self.processed = True  # Mark as processed
                 log_info_with_queue_id(action_logger, "ACCEPT reason=rcpt_whitelist", self.queue_id)
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT'))
                 return Milter.ACCEPT
 
             if is_reply_to_outbound_email(self.subject, self.sender):
                 log_debug_with_queue_id(logger, f"REPLY DETECTED: {self.subject} from {self.sender}", self.queue_id)
-                self.processed = True  # Mark as processed
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Reply_ACCEPT'))
                 log_info_with_queue_id(action_logger, "ACCEPT reason=reply_whitelist", self.queue_id)
                 return Milter.ACCEPT
@@ -339,7 +330,6 @@ class SubjectFilterMilter(Milter.Base):
                     logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not action='{action}' by subject='{self.subject}': from={self.sender} rcpts={self.recipients}")
                     if action_logger:
                         action_logger.info(f"DEBUG: Would have applied action='{action}' for subject='{self.subject}' from={self.sender} rcpts={self.recipients}")
-                    self.processed = True  # Mark as processed
                     self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'DEBUG_{action}'))
                     return Milter.ACCEPT
 
@@ -347,7 +337,6 @@ class SubjectFilterMilter(Milter.Base):
                 logger.info(f"SIMILARITY: Returning configured {action} for sender {self.sender}")
                 if action_logger:
                     log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
-                self.processed = True  # Mark as processed
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'{action}'))
                 self.action_reason = "Subject similarity match"
                 self.action_action = action
@@ -356,7 +345,6 @@ class SubjectFilterMilter(Milter.Base):
             log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)
             for recip in self.recipients:
                 store_subject(self.subject, recip)
-            self.processed = True  # Mark as processed
             return Milter.ACCEPT
 
         except Exception as e:
@@ -392,13 +380,9 @@ class SubjectFilterMilter(Milter.Base):
             log_error_with_queue_id(logger, f"Unhandled exception in eom: {e}\n{traceback.format_exc()}", self.queue_id)
             return Milter.TEMPFAIL
 
-    def connect(self, IPname, family, hostaddr):
-        return Milter.CONTINUE
-
     def envfrom(self, mailfrom, *str):
         self.sender = clean_address(mailfrom.lower())
         self.queue_id = self.getsymval('i')
-        self.processed = False  # Reset processed flag for new transaction
         # log_debug_with_queue_id(logger, f"sender is {self.sender}", self.queue_id)
         # log_debug_with_queue_id(logger, f"self: {vars(self)}", self.queue_id)
         return Milter.CONTINUE
@@ -414,18 +398,6 @@ class SubjectFilterMilter(Milter.Base):
         if name.lower() == 'subject':
             self.subject = value.strip().replace('\n','')
             log_debug_with_queue_id(logger, f"subject is '{self.subject}'", self.queue_id)
-        return Milter.CONTINUE
-
-    def body(self, chunk):
-        return Milter.ACCEPT
-
-    def eob(self):
-        return Milter.ACCEPT
-
-    def close(self):
-        return Milter.CONTINUE
-
-    def abort(self):
         return Milter.CONTINUE
 
 def test_script(sender, recipient, subject):

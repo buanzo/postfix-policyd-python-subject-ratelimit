@@ -28,7 +28,8 @@ from config import (
     internal_domains,
     internal_domains_file,
     use_subject_similarity_for_replies,
-    subject_substring_whitelist
+    subject_substring_whitelist,
+    scrub_subject_noise
 )
 
 class CustomFormatter(logging.Formatter):
@@ -162,7 +163,11 @@ def is_subject_whitelisted(subject, whitelist):
 
 def is_similar(subject, recent_subjects, method="similarity", threshold=0.8, count=3):
     similar_count = 0
+    if scrub_subject_noise:
+        subject = ''.join(filter(lambda x: x not in '0123456789 ', subject))
     for recent_subject in recent_subjects:
+        if scrub_subject_noise:
+            recent_subject = ''.join(filter(lambda x: x not in '0123456789 ', recent_subject))
         if method == "similarity":
             similarity = difflib.SequenceMatcher(None, subject, recent_subject).ratio()
             if similarity > threshold:

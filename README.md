@@ -68,6 +68,7 @@ Edit the newly created `config.py` file to set the parameters for your needs. Yo
 - `similarity_threshold`: Threshold for string similarity (0 to 1).
 - `similarity_count`: Number of similar subjects required to trigger rejection.
 - `comparison_method`: Method for comparing subjects (similarity or exact).
+- `scrub_subjects`: If true, spaces and digits will removed prior to similarity checks. Does not apply to 'exact' comparison_method.
 
 ### Trigger Settings
 - `trigger_for_same_recipient`: Only trigger for emails sent to the same recipient.
@@ -87,6 +88,7 @@ Edit the newly created `config.py` file to set the parameters for your needs. Yo
 ### Internal Domains
 - `internal_domains`: List of internal domains to identify outbound emails.
 - `internal_domains_file`: Path to the file containing additional internal domains one per line.
+
 
 ## Available actions
 

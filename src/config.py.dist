@@ -40,3 +40,6 @@ internal_domains_file = None
 # Use subject similarity check for replies
 use_subject_similarity_for_replies = False
 
+# Some phishing/spam/campaigns use numbers and/or extra spaces.
+# We can optionally remove those from subjects when doing similarity checking
+scrub_subject_noise = True

@@ -370,8 +370,8 @@ class SubjectFilterMilter(Milter.Base):
             # https://pythonhosted.org/pymilter/classMilter_1_1Base.html#a4f9e59479fe677ebe425128a37db67b0
             if self.action_action is not None and self.action_action in ("QUARANTINE", "HOLD"):
                 self.quarantine("Quarantined by subject similarity ratelimit")
-                log_info_with_queue_id(action_logger, f"Simillarity triggered quarantine action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
-                return Milter.QUARANTINE
+                log_info_with_queue_id(action_logger, f"Similarity triggered quarantine action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
+                return Milter.ACCEPT  # actual quarantine requires self.quarantine(reason) then return Milter.ACCEPT and not Milter.QUARANTINE
             else:  # Check for other actions that dont require specific methods
                 action_to_take = {
                     'ACCEPT': Milter.ACCEPT,

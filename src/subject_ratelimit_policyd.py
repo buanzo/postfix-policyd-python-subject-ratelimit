@@ -7,7 +7,7 @@ import logging
 import argparse
 import Milter
 import traceback
-from email.header import decode_header
+from email.header import decode_header, make_header
 
 from config import (
     time_window_minutes,
@@ -228,12 +228,12 @@ def is_whitelisted(address, address_whitelist, domain_whitelist):
     return False
 
 def decode_subject(subject):
-    decoded_fragments = decode_header(subject)
-    decoded_subject = ''.join(
-        fragment.decode(encoding or 'utf-8') if isinstance(fragment, bytes) else fragment
-        for fragment, encoding in decoded_fragments
-    )
-    return decoded_subject
+    try:
+        decoded_header = decode_header(subject)
+        return str(make_header(decoded_header))
+    except Exception as e:
+        logger.error(f"Failed to decode subject: {subject}. Error: {e}")
+        return subject
 
 def is_reply(subject):
     return subject.startswith('re:')

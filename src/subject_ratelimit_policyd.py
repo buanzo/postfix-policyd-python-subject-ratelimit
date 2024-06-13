@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Author: Arturo 'Buanzo' Busleiman github.com/buanzo
+import re
 import sqlite3
 import datetime
 import difflib
@@ -29,7 +30,8 @@ from config import (
     internal_domains_file,
     use_subject_similarity_for_replies,
     subject_substring_whitelist,
-    scrub_subject_noise
+    scrub_subject_noise,
+    subject_min_words
 )
 
 class CustomFormatter(logging.Formatter):
@@ -57,6 +59,11 @@ if action_log_file_path is not None:
     action_handler.setFormatter(action_formatter)
     action_logger.addHandler(action_handler)
     action_logger.setLevel(logging.INFO)
+
+def count_words(string):
+    # Use a regular expression to match words
+    words = re.findall(r'\b\w+\b', string)
+    return len(words)
 
 def sanitize_subject(subject):
     try:
@@ -162,6 +169,11 @@ def is_subject_whitelisted(subject, whitelist):
     return False
 
 def is_similar(subject, recent_subjects, method="similarity", threshold=0.8, count=3):
+    try:
+        if subject_min_words is not None and count_words(subject) < subject_min_words:
+            return False
+    except:
+        return False
     similar_count = 0
     if scrub_subject_noise:
         subject = ''.join(filter(lambda x: x not in '0123456789 ', subject))

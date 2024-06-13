@@ -313,13 +313,13 @@ class SubjectFilterMilter(Milter.Base):
             if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
                 log_debug_with_queue_id(logger, f"WHITELISTED SENDER: {self.sender}", self.queue_id)
                 # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Sender_ACCEPT'))
-                log_info_with_queue_id(action_logger, "ACCEPT reason=sender_whitelist", self.queue_id)
+                log_info_with_queue_id(action_logger, "ACCEPT reason=sender_whitelist sender={self.sender} subject='{self.subject}'", self.queue_id)
                 return Milter.ACCEPT
 
             # Check if any recipient is whitelisted
             if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
                 log_debug_with_queue_id(logger, f"WHITELISTED RECIPIENT: Any of {self.recipients}", self.queue_id)
-                log_info_with_queue_id(action_logger, "ACCEPT reason=rcpt_whitelist", self.queue_id)
+                log_info_with_queue_id(action_logger, "ACCEPT reason=rcpt_whitelist sender={self.sender} subject='{self.subject}'", self.queue_id)
                 # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT'))
                 return Milter.ACCEPT
 
@@ -332,7 +332,7 @@ class SubjectFilterMilter(Milter.Base):
 
             recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
             if is_similar(self.subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
-                log_debug_with_queue_id(logger, f"SIMILARITY: Subject '{self.subject}' triggers similarity match", self.queue_id)
+                log_info_with_queue_id(logger, f"SIMILARITY: Subject '{self.subject}' triggers similarity match. sender={self.sender} subject='{self.subject}'", self.queue_id)
                 # When DEBUG==True we only log what we would have done, but not actually do anything but ACCEPT
                 if DEBUG:
                     logger.info(f"SIMILARITY: DEBUG ACTIVE: Will not action='{action}' by subject='{self.subject}': from={self.sender} rcpts={self.recipients}")
@@ -343,7 +343,7 @@ class SubjectFilterMilter(Milter.Base):
 
 
                 # When not debugging, we set action_action and action_reason to be used later, in eom()
-                logger.info(f"SIMILARITY: Will {action} sender {self.sender}")
+                logger.info(f"SIMILARITY: Will {action} sender {self.sender} subject='{self.subject}' rcpts={self.recipients}")
                 if action_logger:
                     log_info_with_queue_id(action_logger, f"{action} reason=similarity subject='{self.subject}' sender='{self.sender}' recipients='{self.recipients}", self.queue_id)
                 self.headers_to_add.append(('X-Subject-Ratelimit-Action', f'{action}'))
@@ -369,7 +369,7 @@ class SubjectFilterMilter(Milter.Base):
             for header, value in self.headers_to_add:
                 try:
                     self.addheader(header, value)
-                    log_info_with_queue_id(logger, f"Added header {header}: {value}", self.queue_id)
+                    # log_debug_with_queue_id(logger, f"Added header {header}: {value}", self.queue_id)
                 except Exception as e:
                     log_error_with_queue_id(logger, f"Failed to add header {header}: {e}", self.queue_id)
 
@@ -377,7 +377,7 @@ class SubjectFilterMilter(Milter.Base):
             # https://pythonhosted.org/pymilter/classMilter_1_1Base.html#a4f9e59479fe677ebe425128a37db67b0
             if self.action_action is not None and self.action_action in ("QUARANTINE", "HOLD"):
                 self.quarantine("Quarantined by subject similarity ratelimit")
-                log_info_with_queue_id(action_logger, f"Similarity triggered quarantine action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
+                log_info_with_queue_id(action_logger, f"Similarity triggered quarantine action_action={self.action_action} action_reason='{self.action_reason}' sender={self.sender} subject='{self.subject}' recipients='{self.recipients}'", self.queue_id)
                 return Milter.ACCEPT  # actual quarantine requires self.quarantine(reason) then return Milter.ACCEPT and not Milter.QUARANTINE
             else:  # Check for other actions that dont require specific methods
                 action_to_take = {
@@ -386,7 +386,7 @@ class SubjectFilterMilter(Milter.Base):
                     'DISCARD': Milter.DISCARD,
                     'TEMPFAIL': Milter.TEMPFAIL
                 }.get(action, Milter.TEMPFAIL)  # Default action is TEMPFAIL if the provided action is not recognized
-                log_info_with_queue_id(action_logger, f"Similarity triggered action_action={self.action_action} action_reason='{self.action_reason}'", self.queue_id)
+                log_info_with_queue_id(action_logger, f"Similarity triggered action_action={self.action_action} action_reason='{self.action_reason}' sender={self.sender} subject='{self.subject}' recipients='{self.recipients}'", self.queue_id)
                 return action_to_take
         except Exception as e:
             log_error_with_queue_id(logger, f"Unhandled exception in eom: {e}\n{traceback.format_exc()}", self.queue_id)

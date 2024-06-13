@@ -303,10 +303,11 @@ class SubjectFilterMilter(Milter.Base):
             # Check if the sender is from an internal domain and store as outbound email if it's not a reply
             if sender_domain in combined_internal_domains:
                 log_debug_with_queue_id(logger, f"Sender {self.sender} is from an internal domain", self.queue_id)
-                if not is_reply(self.subject):
-                    log_debug_with_queue_id(logger, f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'", self.queue_id)
-                    store_outbound_email(self.subject, self.recipients[0])
-                    log_debug_with_queue_id(logger, f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}", self.queue_id)
+# TODO: FIX
+#                if not is_reply(self.subject):
+#                    log_debug_with_queue_id(logger, f"Storing outbound email: subject='{self.subject}', recipient='{self.recipients[0]}'", self.queue_id)
+#                    store_outbound_email(self.subject, self.recipients[0])
+#                    log_debug_with_queue_id(logger, f"OUTBOUND EMAIL STORED: {self.subject} -> {self.recipients[0]}", self.queue_id)
 
             # Check if the sender is whitelisted
             if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
@@ -322,11 +323,12 @@ class SubjectFilterMilter(Milter.Base):
                 # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT'))
                 return Milter.ACCEPT
 
-            if is_reply_to_outbound_email(self.subject, self.sender):
-                log_debug_with_queue_id(logger, f"REPLY DETECTED: {self.subject} from {self.sender}", self.queue_id)
-                # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Reply_ACCEPT'))
-                log_info_with_queue_id(action_logger, "ACCEPT reason=reply_whitelist", self.queue_id)
-                return Milter.ACCEPT
+#TODO: FIX
+#            if is_reply_to_outbound_email(self.subject, self.sender):
+#                log_debug_with_queue_id(logger, f"REPLY DETECTED: {self.subject} from {self.sender}", self.queue_id)
+#                # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Reply_ACCEPT'))
+#                log_info_with_queue_id(action_logger, "ACCEPT reason=reply_whitelist", self.queue_id)
+#                return Milter.ACCEPT
 
             recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
             if is_similar(self.subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):

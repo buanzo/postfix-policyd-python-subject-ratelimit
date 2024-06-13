@@ -288,7 +288,7 @@ class SubjectFilterMilter(Milter.Base):
             if is_subject_whitelisted(self.subject, subject_substring_whitelist):
                 log_debug_with_queue_id(logger, f"WHITELISTED SUBJECT: {self.subject}", self.queue_id)
                 # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Substring_ACCEPT'))
-                log_info_with_queue_id(action_logger, "ACCEPT reason=subject_whitelist", self.queue_id)
+                log_info_with_queue_id(action_logger, f"ACCEPT reason=subject_whitelist subject='{self.subject}'", self.queue_id)
                 return Milter.ACCEPT
 
             # Extract sender's domain
@@ -313,13 +313,13 @@ class SubjectFilterMilter(Milter.Base):
             if is_whitelisted(self.sender, from_address_whitelist, combined_domain_whitelist):
                 log_debug_with_queue_id(logger, f"WHITELISTED SENDER: {self.sender}", self.queue_id)
                 # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Sender_ACCEPT'))
-                log_info_with_queue_id(action_logger, f"ACCEPT reason=sender_whitelist sender={self.sender} subject='{self.subject}'", self.queue_id)
+                log_info_with_queue_id(action_logger, f"ACCEPT reason=sender_whitelist sender={self.sender} subject='{self.subject}' recipients='{self.recipients}'", self.queue_id)
                 return Milter.ACCEPT
 
             # Check if any recipient is whitelisted
             if any(is_whitelisted(recip, rcpt_address_whitelist, []) for recip in self.recipients):
                 log_debug_with_queue_id(logger, f"WHITELISTED RECIPIENT: Any of {self.recipients}", self.queue_id)
-                log_info_with_queue_id(action_logger, f"ACCEPT reason=rcpt_whitelist sender={self.sender} subject='{self.subject}'", self.queue_id)
+                log_info_with_queue_id(action_logger, f"ACCEPT reason=rcpt_whitelist sender={self.sender} subject='{self.subject}' recipients={self.recipients}", self.queue_id)
                 # self.headers_to_add.append(('X-Subject-Ratelimit-Action', 'Whitelist_Rcpt_ACCEPT'))
                 return Milter.ACCEPT
 

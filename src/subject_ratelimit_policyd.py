@@ -283,6 +283,7 @@ class SubjectFilterMilter(Milter.Base):
         self.headers_to_add = []  # Store headers to add
         self.action_reason = None  # Reason for action
         self.action_action = None  # Action to take
+        self.is_similar = False
 
     def eoh(self):
         try:
@@ -343,7 +344,8 @@ class SubjectFilterMilter(Milter.Base):
 #                return Milter.ACCEPT
 
             recent_subjects = get_recent_subjects(self.recipients[0] if trigger_for_same_recipient else None, window_minutes=time_window_minutes)
-            if is_similar(self.subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count):
+            self.is_similar = is_similar(self.subject, recent_subjects, method=comparison_method, threshold=similarity_threshold, count=similarity_count)
+            if self.is_similar == True:
                 log_info_with_queue_id(logger, f"SIMILARITY: Subject '{self.subject}' triggers similarity match. sender={self.sender} subject='{self.subject}'", self.queue_id)
                 # When DEBUG==True we only log what we would have done, but not actually do anything but ACCEPT
                 if DEBUG:
@@ -362,7 +364,7 @@ class SubjectFilterMilter(Milter.Base):
                 self.action_reason = "Please try later - error code ss01rl04"
                 self.action_action = action
                 return Milter.CONTINUE
-            else:  # yes, there is a return in the previous case, but just to be clear
+            elif self.is_similar == False:
                 log_debug_with_queue_id(logger, f"Storing subject '{self.subject}' for recipients {self.recipients}", self.queue_id)
                 for recip in self.recipients:
                     store_subject(self.subject, recip)
@@ -387,19 +389,22 @@ class SubjectFilterMilter(Milter.Base):
 
             # Now we check for quarantine/hold actions first so we can call quarantine(): 
             # https://pythonhosted.org/pymilter/classMilter_1_1Base.html#a4f9e59479fe677ebe425128a37db67b0
-            if self.action_action is not None and self.action_action in ("QUARANTINE", "HOLD"):
+            if self.action_action is not None and self.action_action in ("QUARANTINE", "HOLD") and self.is_similar:
                 self.quarantine("Quarantined by subject similarity ratelimit")
                 log_info_with_queue_id(action_logger, f"Similarity triggered quarantine action_action={self.action_action} action_reason='{self.action_reason}' sender={self.sender} subject='{self.subject}' recipients='{self.recipients}'", self.queue_id)
                 return Milter.ACCEPT  # actual quarantine requires self.quarantine(reason) then return Milter.ACCEPT and not Milter.QUARANTINE
-            else:  # Check for other actions that dont require specific methods
+            elif self.is_similar:  # Check for other actions that dont require specific methods
                 action_to_take = {
                     'ACCEPT': Milter.ACCEPT,
                     'REJECT': Milter.REJECT,
                     'DISCARD': Milter.DISCARD,
                     'TEMPFAIL': Milter.TEMPFAIL
                 }.get(action, Milter.TEMPFAIL)  # Default action is TEMPFAIL if the provided action is not recognized
-                log_info_with_queue_id(action_logger, f"Similarity triggered action_action={self.action_action} action_reason='{self.action_reason}' sender={self.sender} subject='{self.subject}' recipients='{self.recipients}'", self.queue_id)
+                log_info_with_queue_id(action_logger, f"Similarity triggered action={action} is_similar={self.is_similar} action_action={self.action_action} action_reason='{self.action_reason}' sender={self.sender} subject='{self.subject}' recipients='{self.recipients}'", self.queue_id)
                 return action_to_take
+            elif self.is_similar == False: # This should never happen
+                log_info__with_queue_id(action_logger, f"NOSIMILARITY is_similar={self.is_similar} action_action={self.action_action} action_reason='{self.action_reason}' sender={self.sender} subject='{self.subject}' recipients='{self.recipients}'", self.queue_id)
+                
         except Exception as e:
             log_error_with_queue_id(logger, f"Unhandled exception in eom: {e}\n{traceback.format_exc()}", self.queue_id)
             return Milter.TEMPFAIL

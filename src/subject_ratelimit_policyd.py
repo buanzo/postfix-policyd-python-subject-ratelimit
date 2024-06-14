@@ -310,8 +310,7 @@ class SubjectFilterMilter(Milter.Base):
                 log_debug_with_queue_id(logger, f"Extracted sender domain: {sender_domain}", self.queue_id)
             except Exception as e:
                 log_debug_with_queue_id(logger, f"Failed to extract sender domain from {self.sender}: {e}", self.queue_id)
-                sender_domain = ''  # FIX: Should this be like this? should I Milter.ACCEPT or CONTINUE instead?
-                # return Milter.ACCEPT
+                return Milter.ACCEPT
 
             # Check if the sender is from an internal domain and store as outbound email if it's not a reply
             if sender_domain in combined_internal_domains:
